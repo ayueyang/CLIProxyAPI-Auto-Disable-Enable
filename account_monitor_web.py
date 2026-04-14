@@ -1193,6 +1193,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .restore-result { margin-top:10px; padding:8px; border-radius:6px; font-size:12px; display:none; }
 .restore-result.ok { display:block; background:#22c55e22; color:#22c55e; }
 .restore-result.error { display:block; background:#ef444422; color:#ef4444; }
+.lang-switch { display:inline-flex; border-radius:6px; overflow:hidden; border:1px solid #45475a; margin-left:12px; }
+.lang-btn { padding:2px 10px; font-size:12px; cursor:pointer; border:none; background:#313244; color:#a6adc8; transition:all .15s; }
+.lang-btn.active { background:#89b4fa; color:#1e1e2e; font-weight:600; }
+.lang-btn:hover:not(.active) { background:#45475a; }
 </style>
 </head>
 <body>
@@ -1202,6 +1206,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         <span id="monitorStatus"><span class="status-dot stopped"></span> 已停止</span>
         <span id="scanStatus" style="display:none"><span class="status-dot scanning"></span> 扫描中...</span>
         <span style="color:#a6adc8; font-size:12px" id="lastScan"></span>
+        <div class="lang-switch">
+            <button class="lang-btn active" id="langZh" onclick="setLang('zh')">中文</button>
+            <button class="lang-btn" id="langEn" onclick="setLang('en')">English</button>
+        </div>
     </div>
 </div>
 <div class="controls">
@@ -1274,6 +1282,110 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 </div>
 <script>
 let lastLogCount = 0;
+let currentLang = localStorage.getItem('lang') || 'zh';
+
+const i18n = {
+    zh: {
+        title: '🛡️ CLIProxyAPI codex自动禁用解禁',
+        running: '运行中', stopped: '已停止', scanning: '扫描中...',
+        lastScan: '上次扫描',
+        btnStart: '▶ 启动', btnStop: '■ 停止', btnScan: '🔄 全量扫描',
+        btnBackup: '💾 立即备份', btnEnableAll: '🔓 一键解禁所有',
+        btnRestore: '♻️ 恢复文件', btnExportCsv: '📊 导出CSV', btnExportJson: '📊 导出JSON',
+        btnImport: '📥 导入账号',
+        autoDisable: '自动禁用', autoEnable: '自动解禁', autoBackup: '自动备份',
+        valid: '✅ 有效', noQuota: '⚠️ 无额度', invalid: '❌ 失效', unknown: '❓ 未知', skip: '⏭️ 跳过', total: '📊 总计',
+        cfgValid: '✅有效', cfgNoQuota: '⚠️无额度', cfgInvalid: '❌失效', cfgUnknown: '❓未知',
+        cfgRetryUnknown: '未知重试', cfgRetryInvalid: '失效重试',
+        unitSec: '秒', unitTimes: '次', btnSave: '💾 保存配置',
+        accountList: '📋 账号列表', runLog: '📝 运行日志',
+        thFilename: '文件名', thEmail: '邮箱', thStatus: '状态', thReason: '原因', thResetTime: '重置时间', thLastCheck: '上次检查',
+        justNow: '刚刚', minAgo: '分钟前', hourAgo: '小时前', dayAgo: '天前',
+        daysLater: '天后', hoursLater: '小时后', aboutToReset: '即将重置', daysAgo: '天前',
+        backupTitle: '♻️ 从备份恢复文件', backupHint: '只恢复 data/ 目录中不存在的文件，已有文件不会被覆盖',
+        noBackups: '暂无备份', btnRestoreFile: '恢复', restoring: '恢复中...',
+        backupRunning: '备份中...', backupOk: '✅ 备份成功', backupFail: '❌ 失败', networkError: '❌ 网络错误',
+        enableRunning: '解禁中...', enableOk: '✅ 已解禁', enableFail: '❌ 失败',
+        enableConfirm: '确定要解禁所有账号吗？这将把所有 .invalid/.no_quota/.unknown 文件恢复为 .json',
+        scanRunning: '扫描中...', scanOk: '✅ 扫描完成', scanFail: '❌ 失败',
+        restoreOk: '✅ 恢复成功', restoreFail: '❌ 恢复失败',
+        intervalSaved: '✅ 配置已保存',
+    },
+    en: {
+        title: '🛡️ CLIProxyAPI Codex Auto Disable/Enable',
+        running: 'Running', stopped: 'Stopped', scanning: 'Scanning...',
+        lastScan: 'Last scan',
+        btnStart: '▶ Start', btnStop: '■ Stop', btnScan: '🔄 Full Scan',
+        btnBackup: '💾 Backup Now', btnEnableAll: '🔓 Enable All',
+        btnRestore: '♻️ Restore', btnExportCsv: '📊 Export CSV', btnExportJson: '📊 Export JSON',
+        btnImport: '📥 Import',
+        autoDisable: 'Auto Disable', autoEnable: 'Auto Enable', autoBackup: 'Auto Backup',
+        valid: '✅ Valid', noQuota: '⚠️ No Quota', invalid: '❌ Invalid', unknown: '❓ Unknown', skip: '⏭️ Skip', total: '📊 Total',
+        cfgValid: '✅Valid', cfgNoQuota: '⚠️No Quota', cfgInvalid: '❌Invalid', cfgUnknown: '❓Unknown',
+        cfgRetryUnknown: 'Retry Unknown', cfgRetryInvalid: 'Retry Invalid',
+        unitSec: 'sec', unitTimes: 'times', btnSave: '💾 Save',
+        accountList: '📋 Accounts', runLog: '📝 Logs',
+        thFilename: 'Filename', thEmail: 'Email', thStatus: 'Status', thReason: 'Reason', thResetTime: 'Reset Time', thLastCheck: 'Last Check',
+        justNow: 'just now', minAgo: 'm ago', hourAgo: 'h ago', dayAgo: 'd ago',
+        daysLater: 'd later', hoursLater: 'h later', aboutToReset: 'Reset soon', daysAgo: 'd ago',
+        backupTitle: '♻️ Restore from Backup', backupHint: 'Only restore files that do not exist in data/. Existing files will not be overwritten.',
+        noBackups: 'No backups', btnRestoreFile: 'Restore', restoring: 'Restoring...',
+        backupRunning: 'Backing up...', backupOk: '✅ Backup OK', backupFail: '❌ Failed', networkError: '❌ Network Error',
+        enableRunning: 'Enabling...', enableOk: '✅ Enabled', enableFail: '❌ Failed',
+        enableConfirm: 'Are you sure to enable all accounts? This will rename all .invalid/.no_quota/.unknown files back to .json',
+        scanRunning: 'Scanning...', scanOk: '✅ Scan done', scanFail: '❌ Failed',
+        restoreOk: '✅ Restored', restoreFail: '❌ Restore failed',
+        intervalSaved: '✅ Config saved',
+    }
+};
+
+function t(key) { return i18n[currentLang][key] || key; }
+
+function setLang(lang) {
+    currentLang = lang;
+    localStorage.setItem('lang', lang);
+    document.getElementById('langZh').className = 'lang-btn' + (lang === 'zh' ? ' active' : '');
+    document.getElementById('langEn').className = 'lang-btn' + (lang === 'en' ? ' active' : '');
+    applyLang();
+}
+
+function applyLang() {
+    document.querySelector('.header h1').textContent = t('title');
+    document.getElementById('btnStart').textContent = t('btnStart');
+    document.getElementById('btnStop').textContent = t('btnStop');
+    document.getElementById('btnScan').textContent = t('btnScan');
+    document.querySelectorAll('.controls .btn')[3].textContent = t('btnBackup');
+    document.querySelectorAll('.controls .btn')[4].textContent = t('btnEnableAll');
+    document.querySelectorAll('.controls .btn')[5].textContent = t('btnRestore');
+    document.querySelectorAll('.controls .btn')[6].textContent = t('btnExportCsv');
+    document.querySelectorAll('.controls .btn')[7].textContent = t('btnExportJson');
+    document.querySelectorAll('.controls .btn')[8].textContent = t('btnImport');
+    document.querySelector('#toggleDisable').previousElementSibling.textContent = t('autoDisable');
+    document.querySelector('#toggleEnable').previousElementSibling.textContent = t('autoEnable');
+    document.querySelector('#toggleBackup').previousElementSibling.textContent = t('autoBackup');
+    document.querySelectorAll('.stat-card')[0].querySelector('.label').textContent = t('valid');
+    document.querySelectorAll('.stat-card')[1].querySelector('.label').textContent = t('noQuota');
+    document.querySelectorAll('.stat-card')[2].querySelector('.label').textContent = t('invalid');
+    document.querySelectorAll('.stat-card')[3].querySelector('.label').textContent = t('unknown');
+    document.querySelectorAll('.stat-card')[4].querySelector('.label').textContent = t('skip');
+    document.querySelectorAll('.stat-card')[5].querySelector('.label').textContent = t('total');
+    document.querySelectorAll('.config-group label')[0].textContent = t('cfgValid');
+    document.querySelectorAll('.config-group label')[1].textContent = t('cfgNoQuota');
+    document.querySelectorAll('.config-group label')[2].textContent = t('cfgInvalid');
+    document.querySelectorAll('.config-group label')[3].textContent = t('cfgUnknown');
+    document.querySelectorAll('.config-group label')[4].textContent = t('cfgRetryUnknown');
+    document.querySelectorAll('.config-group label')[5].textContent = t('cfgRetryInvalid');
+    document.querySelectorAll('.unit').forEach((el, i) => el.textContent = i < 4 ? t('unitSec') : t('unitTimes'));
+    document.querySelector('.config-panel .btn-sm').textContent = t('btnSave');
+    document.querySelectorAll('.panel-title')[0].textContent = t('accountList');
+    document.querySelectorAll('.panel-title')[1].textContent = t('runLog');
+    const ths = document.querySelectorAll('.accounts-table thead th');
+    if (ths.length >= 6) { ths[0].textContent = t('thFilename'); ths[1].textContent = t('thEmail'); ths[2].textContent = t('thStatus'); ths[3].textContent = t('thReason'); ths[4].textContent = t('thResetTime'); ths[5].textContent = t('thLastCheck'); }
+    document.querySelector('.modal h2').textContent = t('backupTitle');
+    document.querySelector('.modal p').textContent = t('backupHint');
+}
+
+setLang(currentLang);
 
 function formatRelativeTime(timeStr) {
     if (!timeStr) return '';
@@ -1281,22 +1393,22 @@ function formatRelativeTime(timeStr) {
     const checkTime = new Date(timeStr);
     const diff = now - checkTime;
     const minutes = Math.floor(diff / 60000);
-    if (minutes < 1) return '刚刚';
-    if (minutes < 60) return minutes + '分钟前';
+    if (minutes < 1) return t('justNow');
+    if (minutes < 60) return minutes + t('minAgo');
     const hours = Math.floor(minutes / 60);
-    if (hours < 24) return hours + '小时前';
+    if (hours < 24) return hours + t('hourAgo');
     const days = Math.floor(hours / 24);
-    return days + '天前';
+    return days + t('dayAgo');
 }
 
 function updateUI() {
     fetch('/api/status').then(r => r.json()).then(data => {
-        document.getElementById('monitorStatus').innerHTML = '<span class="status-dot ' + (data.running ? 'running' : 'stopped') + '"></span> ' + (data.running ? '运行中' : '已停止');
+        document.getElementById('monitorStatus').innerHTML = '<span class="status-dot ' + (data.running ? 'running' : 'stopped') + '"></span> ' + (data.running ? t('running') : t('stopped'));
         document.getElementById('scanStatus').style.display = data.scanning ? 'inline' : 'none';
         document.getElementById('btnStart').disabled = data.running;
         document.getElementById('btnStop').disabled = !data.running;
         document.getElementById('btnScan').disabled = data.scanning;
-        document.getElementById('lastScan').textContent = data.last_scan_time ? '上次扫描: ' + data.last_scan_time.replace('T', ' ').substring(0, 19) : '';
+        document.getElementById('lastScan').textContent = data.last_scan_time ? t('lastScan') + ': ' + data.last_scan_time.replace('T', ' ').substring(0, 19) : '';
         document.getElementById('toggleDisable').className = 'toggle' + (data.auto_disable ? ' active' : '');
         document.getElementById('toggleEnable').className = 'toggle' + (data.auto_enable ? ' active' : '');
         document.getElementById('toggleBackup').className = 'toggle' + (data.auto_backup ? ' active' : '');
@@ -1330,7 +1442,7 @@ function updateUI() {
             const checkTime = a.last_check ? a.last_check.replace('T',' ').substring(11,19) : '-';
             const relativeTime = a.last_check ? formatRelativeTime(a.last_check) : '';
             const resetTime = a.reset_at ? a.reset_at.replace('T',' ').substring(0,16) : '-';
-            const resetDisplay = a.reset_at ? (() => { const d = new Date(a.reset_at); const now = new Date(); const diffMs = d - now; const diffDays = Math.ceil(diffMs / 86400000); const diffHours = Math.ceil(diffMs / 3600000); const dateStr = (d.getMonth()+1) + '月' + d.getDate() + '日'; if (diffDays > 1) return dateStr + '(' + diffDays + '天后)'; if (diffDays === 1) return dateStr + '(1天后)'; if (diffHours > 0) return diffHours + '小时后'; if (diffHours === 0) return '即将重置'; return dateStr + '(' + Math.abs(diffDays) + '天前)'; })() : '-';
+            const resetDisplay = a.reset_at ? (() => { const d = new Date(a.reset_at); const now = new Date(); const diffMs = d - now; const diffDays = Math.ceil(diffMs / 86400000); const diffHours = Math.ceil(diffMs / 3600000); const dateStr = (d.getMonth()+1) + '/' + d.getDate(); if (diffDays > 1) return dateStr + '(' + diffDays + t('daysLater') + ')'; if (diffDays === 1) return dateStr + '(1' + t('daysLater') + ')'; if (diffHours > 0) return diffHours + t('hoursLater'); if (diffHours === 0) return t('aboutToReset'); return dateStr + '(' + Math.abs(diffDays) + t('daysAgo') + ')'; })() : '-';
             rows += '<tr><td title="' + a.filename + '">' + (a.filename.length>25 ? a.filename.substring(0,25)+'...' : a.filename) + '</td><td>' + (a.email||'-') + '</td><td>' + badge + '</td><td title="' + a.reason + '">' + (a.reason.length>20 ? a.reason.substring(0,20)+'...' : a.reason) + '</td><td class="reset-time" title="' + resetTime + '">' + resetDisplay + '</td><td class="last-check-time">' + checkTime + '<span class="relative-time">' + relativeTime + '</span></td></tr>';
         }
         tbody.innerHTML = rows;
@@ -1396,40 +1508,40 @@ function saveConfig() {
 }
 function backupNow() {
     const btn = event.target;
-    const orig = btn.textContent;
+    const orig = t('btnBackup');
     btn.disabled = true;
-    btn.textContent = '备份中...';
+    btn.textContent = t('backupRunning');
     fetch('/api/backup-now', {method:'POST'}).then(r=>r.json()).then(data => {
         if (data.status === 'ok') {
-            btn.textContent = '✅ 备份成功';
+            btn.textContent = t('backupOk');
             setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2000);
             updateUI();
         } else {
-            btn.textContent = '❌ 失败';
+            btn.textContent = t('backupFail');
             setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2000);
         }
     }).catch(() => {
-        btn.textContent = '❌ 网络错误';
+        btn.textContent = t('networkError');
         setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2000);
     });
 }
 function enableAll() {
-    if (!confirm('确定要解禁所有账号吗？这将把所有 .invalid/.no_quota/.unknown 文件恢复为 .json')) return;
+    if (!confirm(t('enableConfirm'))) return;
     const btn = event.target;
-    const orig = btn.textContent;
+    const orig = t('btnEnableAll');
     btn.disabled = true;
-    btn.textContent = '解禁中...';
+    btn.textContent = t('enableRunning');
     fetch('/api/enable-all', {method:'POST'}).then(r=>r.json()).then(data => {
         if (data.status === 'ok') {
-            btn.textContent = '✅ 已解禁' + data.enabled + '个';
+            btn.textContent = t('enableOk') + data.enabled;
             setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 3000);
             updateUI();
         } else {
-            btn.textContent = '❌ 失败';
+            btn.textContent = t('enableFail');
             setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2000);
         }
     }).catch(() => {
-        btn.textContent = '❌ 网络错误';
+        btn.textContent = t('networkError');
         setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2000);
     });
 }
@@ -1440,13 +1552,13 @@ function showRestore() {
     fetch('/api/backups').then(r=>r.json()).then(data => {
         const list = document.getElementById('backupList');
         if (!data.backups || data.backups.length === 0) {
-            list.innerHTML = '<p style="color:#a6adc8;font-size:12px">暂无备份</p>';
+            list.innerHTML = '<p style="color:#a6adc8;font-size:12px">' + t('noBackups') + '</p>';
             return;
         }
         let html = '';
         for (const b of data.backups) {
             const label = b.name.replace('backup_','').replace('.zip','').replace(/_/g,' ').replace(/(\\d{4}) (\\d{2})(\\d{2}) (\\d{2})(\\d{2})(\\d{2})/, '$1-$2-$3 $4:$5:$6');
-            html += '<div class="backup-item"><span class="name">' + label + '</span><span class="count">' + b.files + ' 文件 ' + (b.size_kb ? b.size_kb + 'KB' : '') + '</span><button class="btn-restore" onclick="doRestore(`' + b.name + '`)">恢复缺失文件</button></div>';
+            html += '<div class="backup-item"><span class="name">' + label + '</span><span class="count">' + b.files + ' files ' + (b.size_kb ? b.size_kb + 'KB' : '') + '</span><button class="btn-restore" onclick="doRestore(`' + b.name + '`)">' + t('btnRestoreFile') + '</button></div>';
         }
         list.innerHTML = html;
     });
@@ -1457,15 +1569,15 @@ function closeRestore() {
 function doRestore(backupName) {
     const resultEl = document.getElementById('restoreResult');
     resultEl.className = 'restore-result';
-    resultEl.textContent = '恢复中...';
+    resultEl.textContent = t('restoring');
     resultEl.style.display = 'block';
     fetch('/api/restore', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({backup:backupName})}).then(r=>r.json()).then(data => {
         if (data.status === 'ok') {
             resultEl.className = 'restore-result ok';
-            resultEl.textContent = '恢复完成: ' + data.restored + ' 个文件已恢复, ' + data.skipped + ' 个已存在';
+            resultEl.textContent = t('restoreOk') + ': ' + data.restored + ' restored, ' + data.skipped + ' existed';
         } else {
             resultEl.className = 'restore-result error';
-            resultEl.textContent = '恢复失败: ' + (data.message || '未知错误');
+            resultEl.textContent = t('restoreFail') + ': ' + (data.message || 'error');
         }
         updateUI();
     });

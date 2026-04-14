@@ -10,3 +10,4 @@ config.yaml
 .env
 *.exe
 account_manage_test_*/
+temp_*/
