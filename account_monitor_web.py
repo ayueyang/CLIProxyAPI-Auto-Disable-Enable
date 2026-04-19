@@ -1499,8 +1499,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     </div>
     <div class="toggle-group layout-switch">
         <span id="layoutLabel">布局</span>
-        <button class="layout-btn active" id="layoutSingle" onclick="setLayout('single')" title="单列">◫</button>
-        <button class="layout-btn" id="layoutDouble" onclick="setLayout('double')" title="双列">⧈</button>
+        <button class="layout-btn active" id="layoutSingle" onclick="setLayout('single')" title="单列">▮</button>
+        <button class="layout-btn" id="layoutDouble" onclick="setLayout('double')" title="双列">◫</button>
     </div>
 </div>
 <div class="auth-dir-bar">
