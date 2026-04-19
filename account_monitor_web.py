@@ -127,6 +127,9 @@ class MonitorState:
         self.retry_unknown = 3
         self.retry_invalid = 2
         self.last_scan_by_group: Dict[str, float] = {}
+        self.new_file_check_interval = 30
+        self.last_file_set: set = set()
+        self.last_new_file_check: float = 0
         self._scan_lock = threading.Lock()
 
 PERSIST_FILE = Path(__file__).resolve().parent / "monitor_state.json"
@@ -188,6 +191,7 @@ def _save_state() -> None:
         "interval_unknown": monitor_state.interval_unknown,
         "retry_unknown": monitor_state.retry_unknown,
         "retry_invalid": monitor_state.retry_invalid,
+        "new_file_check_interval": monitor_state.new_file_check_interval,
     }
     try:
         with open(PERSIST_FILE, "w", encoding="utf-8") as f:
@@ -203,7 +207,7 @@ def _load_state() -> None:
             data = json.load(f)
         for key in ("auto_disable", "auto_enable", "auto_backup", "auto_cleanup",
                      "max_backups", "interval_valid", "interval_no_quota",
-                     "interval_invalid", "interval_unknown", "retry_unknown", "retry_invalid"):
+                     "interval_invalid", "interval_unknown", "retry_unknown", "retry_invalid", "new_file_check_interval"):
             if key in data:
                 setattr(monitor_state, key, data[key])
     except Exception:
@@ -817,6 +821,23 @@ def _do_scan(auth_dir: Path, management: ManagementClient, timeout: int, scan_fi
         for g in due_groups:
             monitor_state.last_scan_by_group[g] = time.time()
 
+def _check_new_files(auth_dir: Path, management: ManagementClient, timeout: int) -> None:
+    now_ts = time.time()
+    with monitor_lock:
+        interval = monitor_state.new_file_check_interval
+        if (now_ts - monitor_state.last_new_file_check) < interval:
+            return
+        monitor_state.last_new_file_check = now_ts
+    current_files = {f.name for f in resolve_files(auth_dir)}
+    with monitor_lock:
+        known = monitor_state.last_file_set
+        new_names = current_files - known
+    if new_names:
+        log_info(f"[NEW] Detected {len(new_names)} new file(s): {', '.join(sorted(new_names))}")
+        scan_accounts(auth_dir, management, timeout, force=False)
+    with monitor_lock:
+        monitor_state.last_file_set = current_files
+
 def monitor_loop(auth_dir: Path, management: ManagementClient, timeout: int) -> None:
     first_scan = True
     while not stop_event.is_set():
@@ -828,6 +849,8 @@ def monitor_loop(auth_dir: Path, management: ManagementClient, timeout: int) -> 
         if first_scan:
             log_info(f"=== Scan cycle #{monitor_state.scan_count} started (initial scan) ===")
             scan_accounts(auth_dir, management, timeout, force=True)
+            with monitor_lock:
+                monitor_state.last_file_set = {f.name for f in resolve_files(auth_dir)}
             log_info(f"=== Scan cycle #{monitor_state.scan_count} completed ===")
             first_scan = False
         else:
@@ -841,10 +864,13 @@ def monitor_loop(auth_dir: Path, management: ManagementClient, timeout: int) -> 
             if groups_due:
                 log_info(f"=== Scan cycle #{monitor_state.scan_count} started (groups due: {', '.join(groups_due)}) ===")
                 scan_accounts(auth_dir, management, timeout, force=False)
+                with monitor_lock:
+                    monitor_state.last_file_set = {f.name for f in resolve_files(auth_dir)}
                 log_info(f"=== Scan cycle #{monitor_state.scan_count} completed ===")
             else:
                 with monitor_lock:
                     monitor_state.scan_count -= 1
+                _check_new_files(auth_dir, management, timeout)
         tick = 10
         for _ in range(tick):
             if stop_event.is_set():
@@ -914,6 +940,7 @@ def create_app(config_path: str = "", auth_dir_override: str = "") -> Flask:
                 "interval_unknown": monitor_state.interval_unknown,
                 "retry_unknown": monitor_state.retry_unknown,
                 "retry_invalid": monitor_state.retry_invalid,
+                "new_file_check_interval": monitor_state.new_file_check_interval,
                 "next_scan": next_scan,
                 "accounts": {k: {"filename": v.filename, "email": v.email, "provider": v.provider, "status": v.status, "reason": v.reason, "last_check": v.last_check, "disabled": v.disabled, "http_status": v.http_status, "error_code": v.error_code, "reset_at": v.reset_at, "refreshed": v.refreshed, "plan_type": v.plan_type} for k, v in monitor_state.accounts.items()},
                 "auth_dir": str(app.config["AUTH_DIR"]),
@@ -1040,11 +1067,14 @@ def create_app(config_path: str = "", auth_dir_override: str = "") -> Flask:
     def api_intervals():
         data = request.json or {}
         updated = {}
-        for key in ("interval_valid", "interval_no_quota", "interval_invalid", "interval_unknown", "retry_unknown", "retry_invalid", "max_backups"):
+        for key in ("interval_valid", "interval_no_quota", "interval_invalid", "interval_unknown", "retry_unknown", "retry_invalid", "max_backups", "new_file_check_interval"):
             if key in data:
                 val = data[key]
                 if key == "max_backups":
                     if not isinstance(val, int) or val < 1:
+                        continue
+                elif key == "new_file_check_interval":
+                    if not isinstance(val, int) or val < 5:
                         continue
                 elif not isinstance(val, int) or val < 10:
                     if key.startswith("retry"):
@@ -1463,6 +1493,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     <div class="config-group"><label>❓未知</label><input type="number" id="cfgUnknown" min="10" step="30" value="300"><span class="unit">秒</span></div>
     <div class="config-group"><label>未知重试</label><input type="number" id="cfgRetryUnknown" min="0" step="1" value="3"><span class="unit">次</span></div>
     <div class="config-group"><label>失效重试</label><input type="number" id="cfgRetryInvalid" min="0" step="1" value="2"><span class="unit">次</span></div>
+    <div class="config-group"><label>新文件检测</label><input type="number" id="cfgNewFileCheck" min="5" step="5" value="30"><span class="unit">秒</span></div>
     <button class="btn-sm" onclick="saveConfig()">💾 保存配置</button>
 </div>
 <div class="main-content">
@@ -1527,6 +1558,7 @@ const i18n = {
         valid: '✅ 有效', noQuota: '⚠️ 无额度', invalid: '❌ 失效', unknown: '❓ 未知', skip: '⏭️ 跳过', total: '📊 总计',
         cfgValid: '✅有效', cfgNoQuota: '⚠️无额度', cfgInvalid: '❌失效', cfgUnknown: '❓未知',
         cfgRetryUnknown: '未知重试', cfgRetryInvalid: '失效重试',
+        cfgNewFileCheck: '新文件检测', cfgNewFileCheckUnit: '秒',
         unitSec: '秒', unitTimes: '次', btnSave: '💾 保存配置',
         accountList: '📋 账号列表', runLog: '📝 运行日志',
         thFilename: '文件名', thEmail: '邮箱', thStatus: '状态', thReason: '原因', thResetTime: '重置时间', thLastCheck: '上次检查',
@@ -1586,6 +1618,7 @@ const i18n = {
         valid: '✅ Valid', noQuota: '⚠️ No Quota', invalid: '❌ Invalid', unknown: '❓ Unknown', skip: '⏭️ Skip', total: '📊 Total',
         cfgValid: '✅Valid', cfgNoQuota: '⚠️No Quota', cfgInvalid: '❌Invalid', cfgUnknown: '❓Unknown',
         cfgRetryUnknown: 'Retry Unknown', cfgRetryInvalid: 'Retry Invalid',
+        cfgNewFileCheck: 'New File Check', cfgNewFileCheckUnit: 'sec',
         unitSec: 'sec', unitTimes: 'times', btnSave: '💾 Save',
         accountList: '📋 Accounts', runLog: '📝 Logs',
         thFilename: 'Filename', thEmail: 'Email', thStatus: 'Status', thReason: 'Reason', thResetTime: 'Reset Time', thLastCheck: 'Last Check',
@@ -1671,7 +1704,8 @@ function applyLang() {
     document.querySelectorAll('.config-group label')[3].textContent = t('cfgUnknown');
     document.querySelectorAll('.config-group label')[4].textContent = t('cfgRetryUnknown');
     document.querySelectorAll('.config-group label')[5].textContent = t('cfgRetryInvalid');
-    document.querySelectorAll('.unit').forEach((el, i) => el.textContent = i < 4 ? t('unitSec') : t('unitTimes'));
+    document.querySelectorAll('.config-group label')[6].textContent = t('cfgNewFileCheck');
+    document.querySelectorAll('.unit').forEach((el, i) => el.textContent = i < 4 ? t('unitSec') : (i === 6 ? t('cfgNewFileCheckUnit') : t('unitTimes')));
     document.querySelector('.config-panel .btn-sm').textContent = t('btnSave');
     document.querySelectorAll('.panel-title')[0].textContent = t('accountList');
     document.querySelectorAll('.panel-title')[1].textContent = t('runLog');
@@ -1727,6 +1761,7 @@ function updateUI() {
         document.getElementById('cfgUnknown').value = data.interval_unknown;
         document.getElementById('cfgRetryUnknown').value = data.retry_unknown;
         document.getElementById('cfgRetryInvalid').value = data.retry_invalid;
+        document.getElementById('cfgNewFileCheck').value = data.new_file_check_interval;
         document.getElementById('cfgMaxBackups').value = data.max_backups;
         document.getElementById('authDirPath').textContent = data.auth_dir || '-';
 
@@ -1863,6 +1898,7 @@ function saveConfig() {
         interval_unknown: parseInt(document.getElementById('cfgUnknown').value) || 300,
         retry_unknown: parseInt(document.getElementById('cfgRetryUnknown').value) || 3,
         retry_invalid: parseInt(document.getElementById('cfgRetryInvalid').value) || 2,
+        new_file_check_interval: parseInt(document.getElementById('cfgNewFileCheck').value) || 30,
     };
     fetch('/api/intervals', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(cfg)}).then(()=>updateUI());
 }
