@@ -1371,10 +1371,21 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .config-group .unit { color: #6b7280; font-size: 11px; }
 .btn-sm { padding: 3px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; background: #45475a; color: #cdd6f4; white-space: nowrap; }
 .main-content { padding: 0 12px; }
+.main-content.layout-double { display: grid; grid-template-columns: 1fr 1fr; gap: 0; min-height: calc(100vh - 340px); }
+.main-content.layout-double .accounts-scroll { max-height: calc(100vh - 380px); }
 .panel { padding: 12px; overflow: hidden; }
 .panel-title { font-size: 14px; font-weight: 700; color: #f5c2e7; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #45475a; }
 .log-panel { background: #1e1e2e; padding: 12px; border-top: 1px solid #313244; }
 .log-panel.collapsed .log-container { display: none; }
+.layout-switch { display: flex; align-items: center; gap: 4px; }
+.layout-btn { width: 28px; height: 24px; border: 1px solid #45475a; border-radius: 4px; background: #1e1e2e; color: #6b7280; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+.layout-btn:hover { border-color: #89b4fa; color: #89b4fa; }
+.layout-btn.active { background: #313244; color: #cdd6f4; border-color: #89b4fa; }
+@media (max-width: 768px) {
+    .main-content.layout-double { grid-template-columns: 1fr; }
+    .layout-switch { display: none; }
+    .controls-row { flex-wrap: wrap; }
+}
 .accounts-table { border-collapse: collapse; font-size: 12px; table-layout: fixed; width: 100%; }
 .accounts-table th { text-align: left; padding: 6px 8px; color: #a6adc8; border-bottom: 1px solid #45475a; font-weight: 600; position: sticky; top: 0; background: #0f0f1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; user-select: none; max-width: 0; }
 .accounts-table th .resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 4px; cursor: col-resize; background: transparent; z-index: 1; }
@@ -1482,7 +1493,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     </div>
     <div class="toggle-group">
         <span id="showLogLabel">折叠日志</span>
-        <div class="toggle active" id="toggleLog" onclick="toggleLogPanel()"></div>
+        <input type="checkbox" id="chkLog" checked onchange="toggleLogPanel()" style="accent-color:#22c55e;width:16px;height:16px;cursor:pointer">
+    </div>
+    <div class="toggle-group layout-switch">
+        <span id="layoutLabel">布局</span>
+        <button class="layout-btn active" id="layoutSingle" onclick="setLayout('single')" title="单列">◫</button>
+        <button class="layout-btn" id="layoutDouble" onclick="setLayout('double')" title="双列">⧈</button>
     </div>
 </div>
 <div class="auth-dir-bar">
@@ -1509,7 +1525,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     <div class="config-group"><label>新文件检测</label><input type="number" id="cfgNewFileCheck" min="5" step="5" value="30"><span class="unit">秒</span></div>
     <button class="btn-sm" onclick="saveConfig()">💾 保存配置</button>
 </div>
-<div class="main-content">
+<div class="main-content" id="mainContent">
     <div class="panel">
         <div class="panel-title">📋 账号列表</div>
         <div class="accounts-scroll">
@@ -1518,6 +1534,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
                 <tbody id="accountsBody"></tbody>
             </table>
         </div>
+    </div>
+    <div class="panel log-inline" id="logInline" style="display:none">
+        <div class="panel-title" style="cursor:pointer" onclick="toggleLogPanel()">📝 运行日志 <span id="logToggleHint2" style="font-size:11px;color:#6b7280;float:right;cursor:pointer">▼ 点击折叠</span></div>
+        <div class="log-container" id="logContainerInline" style="height:calc(100vh - 380px)"></div>
     </div>
 </div>
 <div class="log-panel" id="logPanel">
@@ -1569,7 +1589,7 @@ const i18n = {
         autostartOn: '开机自启: 开', autostartOff: '开机自启: 关', autostartEnable: '开启开机自启', autostartDisable: '关闭开机自启',
         autostartWarn: '将添加启动项到注册表，开机后自动运行 Monitor 服务。确定开启吗？',
         autostartOnlyWindows: '开机自启仅支持 Windows',
-        showLog: '展开日志', hideLog: '折叠日志', logTitle: '📝 运行日志', logCollapse: '▼ 点击折叠', logExpand: '▶ 点击展开',
+        showLog: '展开日志', hideLog: '折叠日志', logTitle: '📝 运行日志', logCollapse: '▼ 点击折叠', logExpand: '▶ 点击展开', layoutLabel: '布局', layoutSingle: '单列', layoutDouble: '双列',
         valid: '✅ 有效', noQuota: '⚠️ 无额度', invalid: '❌ 失效', unknown: '❓ 未知', skip: '⏭️ 跳过', total: '📊 总计',
         cfgValid: '✅有效', cfgNoQuota: '⚠️无额度', cfgInvalid: '❌失效', cfgUnknown: '❓未知',
         cfgRetryUnknown: '未知重试', cfgRetryInvalid: '失效重试',
@@ -1630,7 +1650,7 @@ const i18n = {
         autostartOn: 'Autostart: On', autostartOff: 'Autostart: Off', autostartEnable: 'Enable Autostart', autostartDisable: 'Disable Autostart',
         autostartWarn: 'This will add a startup entry to the registry to auto-run Monitor on boot. Enable?',
         autostartOnlyWindows: 'Autostart only supports Windows',
-        showLog: 'Expand Log', hideLog: 'Collapse Log', logTitle: '📝 Logs', logCollapse: '▼ Click to collapse', logExpand: '▶ Click to expand',
+        showLog: 'Expand Log', hideLog: 'Collapse Log', logTitle: '📝 Logs', logCollapse: '▼ Click to collapse', logExpand: '▶ Click to expand', layoutLabel: 'Layout', layoutSingle: 'Single', layoutDouble: 'Double',
         valid: '✅ Valid', noQuota: '⚠️ No Quota', invalid: '❌ Invalid', unknown: '❓ Unknown', skip: '⏭️ Skip', total: '📊 Total',
         cfgValid: '✅Valid', cfgNoQuota: '⚠️No Quota', cfgInvalid: '❌Invalid', cfgUnknown: '❓Unknown',
         cfgRetryUnknown: 'Retry Unknown', cfgRetryInvalid: 'Retry Invalid',
@@ -1726,7 +1746,12 @@ function applyLang() {
     document.querySelectorAll('.panel-title')[0].textContent = t('accountList');
     const logTitle = document.querySelector('.log-panel .panel-title');
     if (logTitle) { logTitle.innerHTML = t('logTitle') + ' <span id="logToggleHint" style="font-size:11px;color:#6b7280;float:right;cursor:pointer">' + (_logVisible ? t('logCollapse') : t('logExpand')) + '</span>'; }
+    const logInlineTitle = document.querySelector('.log-inline .panel-title');
+    if (logInlineTitle) { logInlineTitle.innerHTML = t('logTitle') + ' <span id="logToggleHint2" style="font-size:11px;color:#6b7280;float:right;cursor:pointer">' + (_logVisible ? t('logCollapse') : t('logExpand')) + '</span>'; }
     document.getElementById('showLogLabel').textContent = _logVisible ? t('hideLog') : t('showLog');
+    document.getElementById('layoutLabel').textContent = t('layoutLabel');
+    document.getElementById('layoutSingle').title = t('layoutSingle');
+    document.getElementById('layoutDouble').title = t('layoutDouble');
     const ths = document.querySelectorAll('.accounts-table thead th');
     if (ths.length >= 6) { ths[0].textContent = t('thFilename'); ths[1].textContent = t('thEmail'); ths[2].textContent = t('thStatus'); ths[3].textContent = t('thReason'); ths[4].textContent = t('thResetTime'); ths[5].textContent = t('thLastCheck'); }
     document.querySelector('.modal h2').textContent = t('backupTitle');
@@ -1737,6 +1762,7 @@ function applyLang() {
 }
 
 setLang(currentLang);
+setLayout(_layoutMode);
 
 (function initResize() {
     const table = document.querySelector('.accounts-table');
@@ -1883,15 +1909,15 @@ function updateUI() {
 
     fetch('/api/logs?after=' + lastLogCount).then(r => r.json()).then(data => {
         if (data.logs && data.logs.length > 0) {
-            const container = document.getElementById('logContainer');
+            const containers = [document.getElementById('logContainer'), document.getElementById('logContainerInline')];
             for (const log of data.logs) {
                 const div = document.createElement('div');
                 div.className = 'log-line log-' + log.level;
                 div.innerHTML = '<span class="log-time">' + log.time.substring(11,19) + '</span>' + escapeHtml(log.message);
-                container.appendChild(div);
+                containers.forEach(c => { if (c) c.appendChild(div.cloneNode(true)); });
             }
             lastLogCount += data.logs.length;
-            container.scrollTop = container.scrollHeight;
+            containers.forEach(c => { if (c) c.scrollTop = c.scrollHeight; });
         }
     });
 }
@@ -1929,21 +1955,60 @@ function confirmCleanup() {
     fetch('/api/toggle', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key:'auto_cleanup'})}).then(()=>updateUI());
 }
 var _autostartEnabled = false;
+var _layoutMode = localStorage.getItem('layoutMode') || 'single';
+function setLayout(mode) {
+    _layoutMode = mode;
+    localStorage.setItem('layoutMode', mode);
+    const mc = document.getElementById('mainContent');
+    const lp = document.getElementById('logPanel');
+    const li = document.getElementById('logInline');
+    const btnS = document.getElementById('layoutSingle');
+    const btnD = document.getElementById('layoutDouble');
+    if (mode === 'double') {
+        mc.classList.add('layout-double');
+        lp.style.display = 'none';
+        li.style.display = '';
+        btnS.classList.remove('active');
+        btnD.classList.add('active');
+    } else {
+        mc.classList.remove('layout-double');
+        lp.style.display = '';
+        li.style.display = 'none';
+        btnS.classList.add('active');
+        btnD.classList.remove('active');
+    }
+    syncLogContainers();
+}
+function syncLogContainers() {
+    const c1 = document.getElementById('logContainer');
+    const c2 = document.getElementById('logContainerInline');
+    if (c1 && c2) {
+        const src = _layoutMode === 'double' ? c1 : c2;
+        const dst = _layoutMode === 'double' ? c2 : c1;
+        if (dst.innerHTML !== src.innerHTML) dst.innerHTML = src.innerHTML;
+    }
+}
 function toggleLogPanel() {
     _logVisible = !_logVisible;
-    const panel = document.getElementById('logPanel');
-    const toggle = document.getElementById('toggleLog');
+    const chk = document.getElementById('chkLog');
     const hint = document.getElementById('logToggleHint');
+    const hint2 = document.getElementById('logToggleHint2');
     const label = document.getElementById('showLogLabel');
+    const lp = document.getElementById('logPanel');
+    const li = document.getElementById('logInline');
     if (_logVisible) {
-        panel.classList.remove('collapsed');
-        toggle.classList.add('active');
+        lp.classList.remove('collapsed');
+        li.classList.remove('collapsed');
+        chk.checked = true;
         if (hint) hint.textContent = t('logCollapse');
+        if (hint2) hint2.textContent = t('logCollapse');
         if (label) label.textContent = t('hideLog');
     } else {
-        panel.classList.add('collapsed');
-        toggle.classList.remove('active');
+        lp.classList.add('collapsed');
+        li.classList.add('collapsed');
+        chk.checked = false;
         if (hint) hint.textContent = t('logExpand');
+        if (hint2) hint2.textContent = t('logExpand');
         if (label) label.textContent = t('showLog');
     }
 }
@@ -2123,13 +2188,12 @@ function changeAuthDir() {
     });
 }
 function log_info_msg(msg) {
-    const container = document.getElementById('logContainer');
+    const containers = [document.getElementById('logContainer'), document.getElementById('logContainerInline')];
     const div = document.createElement('div');
     div.className = 'log-line log-info';
     const now = new Date();
     div.innerHTML = '<span class="log-time">' + now.toTimeString().substring(0,8) + '</span>' + escapeHtml(msg);
-    container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
+    containers.forEach(c => { if (c) { c.appendChild(div.cloneNode(true)); c.scrollTop = c.scrollHeight; } });
 }
 function showDirHelp() {
     document.getElementById('dirHelpTitle').textContent = t('dirHelpTitle');
