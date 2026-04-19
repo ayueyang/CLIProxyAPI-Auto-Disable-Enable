@@ -1405,11 +1405,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .log-error { color: #ef4444; }
 .log-time { color: #6b7280; margin-right: 6px; }
 .accounts-scroll { max-height: calc(100vh - 400px); overflow: auto; }
-.filename-cell { cursor: pointer; }
-.filename-cell .filename-toggle { color: #89b4fa; }
-.filename-cell .filename-full { display: none; color: #a6adc8; font-size: 11px; margin-top: 2px; word-break: break-all; }
-.filename-cell.expanded .filename-full { display: block; }
-.filename-cell.expanded .filename-toggle { color: #a6adc8; }
+.info-cell .cell-email { display: block; color: #cdd6f4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.info-cell .cell-filename { display: block; color: #6b7280; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
 .last-check-time { position: relative; }
 .relative-time { font-size: 10px; color: #6b7280; display: block; margin-top: 2px; }
 .countdown { font-size: 10px; color: #6b7280; margin-top: 2px; }
@@ -1879,7 +1876,9 @@ function updateUI() {
             const relativeTime = a.last_check ? formatRelativeTime(a.last_check) : '';
             const resetTime = a.reset_at ? a.reset_at.replace('T',' ').substring(0,16) : '-';
             const resetDisplay = a.reset_at ? (() => { const d = new Date(a.reset_at); const now = new Date(); const diffMs = d - now; const diffDays = Math.ceil(diffMs / 86400000); const diffHours = Math.ceil(diffMs / 3600000); const dateStr = (d.getMonth()+1) + '/' + d.getDate(); if (diffDays > 1) return dateStr + '(' + diffDays + t('daysLater') + ')'; if (diffDays === 1) return dateStr + '(1' + t('daysLater') + ')'; if (diffHours > 0) return diffHours + t('hoursLater'); if (diffHours === 0) return t('aboutToReset'); return dateStr + '(' + Math.abs(diffDays) + t('daysAgo') + ')'; })() : '-';
-            rows += '<tr><td class="filename-cell" title="' + a.filename + '"><span class="filename-toggle" onclick="this.parentElement.classList.toggle(&apos;expanded&apos;)">' + (a.email||a.filename) + '</span><span class="filename-full">' + a.filename + '</span></td><td>' + badge + '</td><td title="' + a.reason + '">' + a.reason + '</td><td class="reset-time" title="' + resetTime + '">' + resetDisplay + '</td><td class="last-check-time">' + checkTime + '<span class="relative-time">' + relativeTime + '</span></td></tr>';
+            const emailDisplay = a.email ? '<span class="cell-email">' + a.email + '</span>' : '';
+            const fileDisplay = (a.email && a.email !== a.filename) ? '<span class="cell-filename">' + a.filename + '</span>' : '<span class="cell-email">' + a.filename + '</span>';
+            rows += '<tr><td class="info-cell" title="' + a.filename + '">' + emailDisplay + fileDisplay + '</td><td>' + badge + '</td><td title="' + a.reason + '">' + a.reason + '</td><td class="reset-time" title="' + resetTime + '">' + resetDisplay + '</td><td class="last-check-time">' + checkTime + '<span class="relative-time">' + relativeTime + '</span></td></tr>';
         }
         tbody.innerHTML = rows;
         document.getElementById('countValid').textContent = valid;
