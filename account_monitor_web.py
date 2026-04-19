@@ -1374,11 +1374,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 @media (max-width: 900px) { .main-content { grid-template-columns: 1fr; } }
 .panel { padding: 12px; overflow: hidden; }
 .panel-title { font-size: 14px; font-weight: 700; color: #f5c2e7; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #45475a; }
-.accounts-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+.accounts-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; min-width: 600px; }
 .accounts-table th { text-align: left; padding: 6px 6px; color: #a6adc8; border-bottom: 1px solid #45475a; font-weight: 600; position: sticky; top: 0; background: #0f0f1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; user-select: none; }
 .accounts-table th .resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 4px; cursor: col-resize; background: transparent; }
 .accounts-table th .resize-handle:hover, .accounts-table th .resize-handle.active { background: #89b4fa; }
-.accounts-table td { padding: 4px 6px; border-bottom: 1px solid #1e1e2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.accounts-table td { padding: 4px 6px; border-bottom: 1px solid #1e1e2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0; }
 .accounts-table tr:hover { background: #1e1e2e; }
 .badge { padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .badge-valid { background: #22c55e22; color: #22c55e; }
@@ -1392,7 +1392,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .log-warn { color: #eab308; }
 .log-error { color: #ef4444; }
 .log-time { color: #6b7280; margin-right: 6px; }
-.accounts-scroll { max-height: calc(100vh - 380px); overflow-y: auto; }
+.accounts-scroll { max-height: calc(100vh - 380px); overflow: auto; }
 .last-check-time { position: relative; }
 .relative-time { font-size: 10px; color: #6b7280; display: block; margin-top: 2px; }
 .countdown { font-size: 10px; color: #6b7280; margin-top: 2px; }
@@ -1509,7 +1509,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         <div class="panel-title">📋 账号列表</div>
         <div class="accounts-scroll">
             <table class="accounts-table">
-                <thead><tr><th data-col="0" style="width:25%">文件名</th><th data-col="1" style="width:20%">邮箱</th><th data-col="2" style="width:10%">状态</th><th data-col="3" style="width:20%">原因</th><th data-col="4" style="width:12%">重置时间</th><th data-col="5" style="width:13%">上次检查</th></tr></thead>
+                <thead><tr><th data-col="0">文件名</th><th data-col="1">邮箱</th><th data-col="2">状态</th><th data-col="3">原因</th><th data-col="4">重置时间</th><th data-col="5">上次检查</th></tr></thead>
                 <tbody id="accountsBody"></tbody>
             </table>
         </div>
@@ -1731,33 +1731,38 @@ setLang(currentLang);
 (function initResize() {
     const table = document.querySelector('.accounts-table');
     if (!table) return;
+    const colWidths = [180, 150, 70, 150, 90, 100];
+    const colgroup = document.createElement('colgroup');
+    const cols = [];
+    colWidths.forEach(w => {
+        const col = document.createElement('col');
+        col.style.width = w + 'px';
+        colgroup.appendChild(col);
+        cols.push(col);
+    });
+    table.insertBefore(colgroup, table.firstChild);
     const ths = table.querySelectorAll('thead th');
-    ths.forEach(th => {
+    ths.forEach((th, i) => {
         const handle = document.createElement('div');
         handle.className = 'resize-handle';
         th.appendChild(handle);
-        let startX = 0, startW = 0, currentTh = null;
+        let startX = 0, startW = 0;
         handle.addEventListener('mousedown', e => {
             e.preventDefault();
-            currentTh = th;
             startX = e.clientX;
-            startW = th.offsetWidth;
+            startW = colWidths[i];
             handle.classList.add('active');
             document.addEventListener('mousemove', onMove);
             document.addEventListener('mouseup', onUp);
         });
         function onMove(e) {
-            if (!currentTh) return;
             const diff = e.clientX - startX;
             const newW = Math.max(40, startW + diff);
-            currentTh.style.width = newW + 'px';
-            currentTh.style.minWidth = newW + 'px';
+            colWidths[i] = newW;
+            cols[i].style.width = newW + 'px';
         }
         function onUp() {
-            if (currentTh) {
-                currentTh = null;
-                handle.classList.remove('active');
-            }
+            handle.classList.remove('active');
             document.removeEventListener('mousemove', onMove);
             document.removeEventListener('mouseup', onUp);
         }
