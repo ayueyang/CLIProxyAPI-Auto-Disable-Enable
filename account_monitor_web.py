@@ -1373,8 +1373,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .main-content { padding: 0 12px; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .main-content.layout-double { display: grid; grid-template-columns: 1fr 1fr; gap: 0; flex: 1; min-height: 0; }
 .main-content.layout-double .accounts-scroll { max-height: none; flex: 1; min-height: 0; }
-.panel { padding: 12px; overflow: hidden; display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.panel-title { font-size: 14px; font-weight: 700; color: #f5c2e7; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #45475a; }
+.panel { padding: 12px; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.panel-title { font-size: 14px; font-weight: 700; color: #f5c2e7; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #45475a; flex-shrink: 0; }
 .log-panel { background: #1e1e2e; padding: 12px; border-top: 1px solid #313244; flex-shrink: 0; }
 .log-panel.collapsed .log-container { display: none; }
 .layout-switch { display: flex; align-items: center; gap: 4px; }
@@ -1404,7 +1404,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .log-warn { color: #eab308; }
 .log-error { color: #ef4444; }
 .log-time { color: #6b7280; margin-right: 6px; }
-.accounts-scroll { flex: 1; min-height: 0; overflow: auto; }
+.accounts-scroll { flex: 1; min-height: 200px; overflow: auto; }
 .info-cell .cell-email { display: block; color: #cdd6f4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: text; }
 .info-cell .cell-filename { display: block; color: #6b7280; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; user-select: text; }
 .last-check-time { position: relative; }
@@ -1876,9 +1876,9 @@ function updateUI() {
             const relativeTime = a.last_check ? formatRelativeTime(a.last_check) : '';
             const resetTime = a.reset_at ? a.reset_at.replace('T',' ').substring(0,16) : '-';
             const resetDisplay = a.reset_at ? (() => { const d = new Date(a.reset_at); const now = new Date(); const diffMs = d - now; const diffDays = Math.ceil(diffMs / 86400000); const diffHours = Math.ceil(diffMs / 3600000); const dateStr = (d.getMonth()+1) + '/' + d.getDate(); if (diffDays > 1) return dateStr + '(' + diffDays + t('daysLater') + ')'; if (diffDays === 1) return dateStr + '(1' + t('daysLater') + ')'; if (diffHours > 0) return diffHours + t('hoursLater'); if (diffHours === 0) return t('aboutToReset'); return dateStr + '(' + Math.abs(diffDays) + t('daysAgo') + ')'; })() : '-';
-            const emailDisplay = a.email ? '<span class="cell-email">' + a.email + '</span>' : '';
-            const fileDisplay = (a.email && a.email !== a.filename) ? '<span class="cell-filename">' + a.filename + '</span>' : '<span class="cell-email">' + a.filename + '</span>';
-            rows += '<tr><td class="info-cell" title="' + a.filename + '">' + emailDisplay + fileDisplay + '</td><td>' + badge + '</td><td title="' + a.reason + '">' + a.reason + '</td><td class="reset-time" title="' + resetTime + '">' + resetDisplay + '</td><td class="last-check-time">' + checkTime + '<span class="relative-time">' + relativeTime + '</span></td></tr>';
+            const emailDisplay = a.email ? '<span class="cell-email">' + escapeHtml(a.email) + '</span>' : '';
+            const fileDisplay = (a.email && a.email !== a.filename) ? '<span class="cell-filename">' + escapeHtml(a.filename) + '</span>' : '<span class="cell-email">' + escapeHtml(a.filename) + '</span>';
+            rows += '<tr><td class="info-cell" title="' + escapeHtml(a.filename) + '">' + emailDisplay + fileDisplay + '</td><td>' + badge + '</td><td title="' + escapeHtml(a.reason) + '">' + escapeHtml(a.reason) + '</td><td class="reset-time" title="' + escapeHtml(resetTime) + '">' + resetDisplay + '</td><td class="last-check-time">' + checkTime + '<span class="relative-time">' + relativeTime + '</span></td></tr>';
         }
         tbody.innerHTML = rows;
         document.getElementById('countValid').textContent = valid;
