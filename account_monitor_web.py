@@ -1781,8 +1781,10 @@ setLayout(_layoutMode);
     table.insertBefore(colgroup, table.firstChild);
     function updateTableWidth() {
         const total = colWidths.reduce((a, b) => a + b, 0);
-        const containerW = table.parentElement.clientWidth - 2;
-        const w = Math.max(total, containerW);
+        const scrollEl = table.closest('.accounts-scroll');
+        const containerW = scrollEl ? scrollEl.clientWidth - 2 : table.parentElement.clientWidth - 2;
+        const isDouble = document.getElementById('mainContent') && document.getElementById('mainContent').classList.contains('layout-double');
+        const w = isDouble ? total : Math.max(total, containerW);
         table.style.width = w + 'px';
         table.style.minWidth = total + 'px';
     }
@@ -1981,6 +1983,7 @@ function setLayout(mode) {
         btnD.classList.remove('active');
     }
     syncLogContainers();
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
 }
 function syncLogContainers() {
     const c1 = document.getElementById('logContainer');
