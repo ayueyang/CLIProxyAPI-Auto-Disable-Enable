@@ -1332,8 +1332,8 @@ HTML_TEMPLATE = """
 ::-webkit-scrollbar-thumb { background: #45475a; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #585b70; }
 * { scrollbar-width: thin; scrollbar-color: #45475a #1e1e2e; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f1a; color: #cdd6f4; min-height: 100vh; }
-.header { background: linear-gradient(135deg, #1e1e2e 0%, #313244 100%); padding: 16px 24px; border-bottom: 2px solid #45475a; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f1a; color: #cdd6f4; min-height: 100vh; display: flex; flex-direction: column; margin: 0; }
+.header { background: linear-gradient(135deg, #1e1e2e 0%, #313244 100%); padding: 16px 24px; border-bottom: 2px solid #45475a; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; flex-shrink: 0; }
 .header h1 { color: #f5c2e7; font-size: 20px; white-space: nowrap; }
 .header .status { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; }
@@ -1341,7 +1341,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .status-dot.stopped { background: #ef4444; }
 .status-dot.scanning { background: #eab308; box-shadow: 0 0 8px #eab308; animation: pulse 1s infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-.controls { background: #1e1e2e; padding: 12px 24px; border-bottom: 1px solid #313244; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.controls { background: #1e1e2e; padding: 12px 24px; border-bottom: 1px solid #313244; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; flex-shrink: 0; }
 .btn { padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.2s; white-space: nowrap; }
 .btn:hover { transform: translateY(-1px); }
 .btn-start { background: #22c55e; color: #000; }
@@ -1364,18 +1364,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .stat-unknown .number { color: #6b7280; }
 .stat-skip .number { color: #3b82f6; }
 .stat-total .number { color: #f5c2e7; }
-.config-panel { background: #1e1e2e; padding: 10px 24px; border-bottom: 1px solid #313244; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.config-panel { background: #1e1e2e; padding: 10px 24px; border-bottom: 1px solid #313244; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; flex-shrink: 0; }
 .config-group { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #a6adc8; white-space: nowrap; }
 .config-group label { white-space: nowrap; }
 .config-group input { width: 52px; padding: 3px 5px; border-radius: 4px; border: 1px solid #45475a; background: #313244; color: #cdd6f4; font-size: 12px; text-align: center; }
 .config-group .unit { color: #6b7280; font-size: 11px; }
 .btn-sm { padding: 3px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; background: #45475a; color: #cdd6f4; white-space: nowrap; }
-.main-content { padding: 0 12px; }
-.main-content.layout-double { display: grid; grid-template-columns: 1fr 1fr; gap: 0; min-height: calc(100vh - 340px); }
-.main-content.layout-double .accounts-scroll { max-height: calc(100vh - 380px); }
-.panel { padding: 12px; overflow: hidden; }
+.main-content { padding: 0 12px; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.main-content.layout-double { display: grid; grid-template-columns: 1fr 1fr; gap: 0; flex: 1; min-height: 0; }
+.main-content.layout-double .accounts-scroll { max-height: none; flex: 1; min-height: 0; }
+.panel { padding: 12px; overflow: hidden; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .panel-title { font-size: 14px; font-weight: 700; color: #f5c2e7; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #45475a; }
-.log-panel { background: #1e1e2e; padding: 12px; border-top: 1px solid #313244; }
+.log-panel { background: #1e1e2e; padding: 12px; border-top: 1px solid #313244; flex-shrink: 0; }
 .log-panel.collapsed .log-container { display: none; }
 .layout-switch { display: flex; align-items: center; gap: 4px; }
 .layout-btn { width: 28px; height: 24px; border: 1px solid #45475a; border-radius: 4px; background: #1e1e2e; color: #6b7280; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
@@ -1404,7 +1404,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .log-warn { color: #eab308; }
 .log-error { color: #ef4444; }
 .log-time { color: #6b7280; margin-right: 6px; }
-.accounts-scroll { max-height: calc(100vh - 400px); overflow: auto; }
+.accounts-scroll { flex: 1; min-height: 0; overflow: auto; }
 .info-cell .cell-email { display: block; color: #cdd6f4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: text; }
 .info-cell .cell-filename { display: block; color: #6b7280; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; user-select: text; }
 .last-check-time { position: relative; }
@@ -1537,9 +1537,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
             </table>
         </div>
     </div>
-    <div class="panel log-inline" id="logInline" style="display:none">
+    <div class="panel log-inline" id="logInline" style="display:none;min-height:0">
         <div class="panel-title" style="cursor:pointer" onclick="toggleLogPanel()">📝 运行日志 <span id="logToggleHint2" style="font-size:11px;color:#6b7280;float:right;cursor:pointer">▼ 点击折叠</span></div>
-        <div class="log-container" id="logContainerInline" style="height:calc(100vh - 380px)"></div>
+        <div class="log-container" id="logContainerInline" style="flex:1;min-height:0"></div>
     </div>
 </div>
 <div class="log-panel" id="logPanel">
