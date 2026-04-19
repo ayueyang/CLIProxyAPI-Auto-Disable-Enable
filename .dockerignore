@@ -1,0 +1,11 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+.env
+monitor_state.json
+backups/
+*.md
+LICENSE
+start_account_monitor.bat

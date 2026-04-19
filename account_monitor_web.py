@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import time
 import shutil
@@ -127,6 +128,86 @@ class MonitorState:
         self.retry_invalid = 2
         self.last_scan_by_group: Dict[str, float] = {}
         self._scan_lock = threading.Lock()
+
+PERSIST_FILE = Path(__file__).resolve().parent / "monitor_state.json"
+
+AUTOSTART_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+AUTOSTART_NAME = "CLIProxyAPI-Monitor"
+
+def _check_autostart() -> bool:
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, AUTOSTART_KEY, 0, winreg.KEY_READ)
+        try:
+            val, _ = winreg.QueryValueEx(key, AUTOSTART_NAME)
+            winreg.CloseKey(key)
+            script = str(Path(__file__).resolve())
+            return script in str(val)
+        except FileNotFoundError:
+            winreg.CloseKey(key)
+            return False
+    except Exception:
+        return False
+
+def _set_autostart(enable: bool) -> bool:
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, AUTOSTART_KEY, 0, winreg.KEY_WRITE)
+        if enable:
+            script = str(Path(__file__).resolve())
+            python_exe = sys.executable
+            cmd = f'"{python_exe}" "{script}"'
+            winreg.SetValueEx(key, AUTOSTART_NAME, 0, winreg.REG_SZ, cmd)
+            log_info(f"[AUTOSTART] Enabled: {cmd}")
+        else:
+            try:
+                winreg.DeleteValue(key, AUTOSTART_NAME)
+                log_info("[AUTOSTART] Disabled")
+            except FileNotFoundError:
+                pass
+        winreg.CloseKey(key)
+        return True
+    except Exception as e:
+        log_error(f"[AUTOSTART] Failed: {e}")
+        return False
+
+def _save_state() -> None:
+    data = {
+        "auto_disable": monitor_state.auto_disable,
+        "auto_enable": monitor_state.auto_enable,
+        "auto_backup": monitor_state.auto_backup,
+        "auto_cleanup": monitor_state.auto_cleanup,
+        "max_backups": monitor_state.max_backups,
+        "interval_valid": monitor_state.interval_valid,
+        "interval_no_quota": monitor_state.interval_no_quota,
+        "interval_invalid": monitor_state.interval_invalid,
+        "interval_unknown": monitor_state.interval_unknown,
+        "retry_unknown": monitor_state.retry_unknown,
+        "retry_invalid": monitor_state.retry_invalid,
+    }
+    try:
+        with open(PERSIST_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+def _load_state() -> None:
+    if not PERSIST_FILE.exists():
+        return
+    try:
+        with open(PERSIST_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        for key in ("auto_disable", "auto_enable", "auto_backup", "auto_cleanup",
+                     "max_backups", "interval_valid", "interval_no_quota",
+                     "interval_invalid", "interval_unknown", "retry_unknown", "retry_invalid"):
+            if key in data:
+                setattr(monitor_state, key, data[key])
+    except Exception:
+        pass
 
 def log_info(message: str):
     with monitor_lock:
@@ -802,6 +883,7 @@ def create_app(config_path: str = "", auth_dir_override: str = "") -> Flask:
     app.config["AUTH_DIR"] = _resolve_auth_dir(cfg, auth_dir_override)
     app.config["CLI_CONFIG"] = cfg
     app.config["CONFIG_PATH"] = config_path
+    _load_state()
     @app.route("/")
     def index():
         return render_template_string(HTML_TEMPLATE)
@@ -855,6 +937,21 @@ def create_app(config_path: str = "", auth_dir_override: str = "") -> Flask:
         app.config["AUTH_DIR"] = p
         log_info(f"Auth dir changed to: {p}")
         return jsonify({"status": "ok", "auth_dir": str(p)})
+
+    @app.route("/api/autostart", methods=["GET"])
+    def api_get_autostart():
+        enabled = _check_autostart()
+        return jsonify({"enabled": enabled})
+
+    @app.route("/api/autostart", methods=["POST"])
+    def api_set_autostart():
+        data = request.get_json(silent=True) or {}
+        enable = data.get("enable", False)
+        ok = _set_autostart(enable)
+        if ok:
+            return jsonify({"status": "ok", "enabled": enable})
+        return jsonify({"status": "error", "message": "failed to update autostart"})
+
     @app.route("/api/logs")
     def api_logs():
         after = int(request.args.get("after", 0))
@@ -937,6 +1034,7 @@ def create_app(config_path: str = "", auth_dir_override: str = "") -> Flask:
             current = getattr(monitor_state, key)
             setattr(monitor_state, key, not current)
         log_info(f"Toggled {key} to {not current}")
+        _save_state()
         return jsonify({"status": "ok", "value": not current})
     @app.route("/api/intervals", methods=["POST"])
     def api_intervals():
@@ -959,6 +1057,7 @@ def create_app(config_path: str = "", auth_dir_override: str = "") -> Flask:
                 updated[key] = val
         if updated:
             log_info(f"Updated scan config: {updated}")
+            _save_state()
         return jsonify({"status": "ok", "updated": updated})
     @app.route("/api/backups")
     def api_backups():
@@ -1007,6 +1106,25 @@ def create_app(config_path: str = "", auth_dir_override: str = "") -> Flask:
             return jsonify({"status": "error", "message": f"failed to read backup: {e}"})
         log_info(f"[RESTORE] Done: {restored} restored, {skipped} already exist, from {backup_name}")
         return jsonify({"status": "ok", "restored": restored, "skipped": skipped})
+
+    @app.route("/api/delete-backup", methods=["POST"])
+    def api_delete_backup():
+        data = request.json or {}
+        backup_name = data.get("backup")
+        if not backup_name:
+            return jsonify({"status": "error", "message": "backup name required"})
+        if not backup_name.startswith("backup_") or not backup_name.endswith(".zip"):
+            return jsonify({"status": "error", "message": "invalid backup name"})
+        auth_dir = app.config["AUTH_DIR"]
+        backup_path = auth_dir / "backups" / backup_name
+        if not backup_path.exists():
+            return jsonify({"status": "error", "message": f"backup {backup_name} not found"})
+        try:
+            backup_path.unlink()
+            log_info(f"[BACKUP] Deleted: {backup_name}")
+            return jsonify({"status": "ok"})
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)})
     @app.route("/api/backup-now", methods=["POST"])
     def api_backup_now():
         auth_dir = app.config["AUTH_DIR"]
@@ -1249,6 +1367,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .backup-item { display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:#313244; border-radius:6px; margin-bottom:6px; }
 .backup-item .name { color:#cdd6f4; font-size:13px; }
 .backup-item .count { color:#a6adc8; font-size:12px; }
+.btn-delete-backup { background:#f38ba8; color:#1e1e2e; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:12px; margin-left:6px; }
+.btn-delete-backup:hover { background:#eba0ac; }
 .btn-restore { padding:4px 12px; border:none; border-radius:4px; cursor:pointer; font-size:11px; font-weight:600; background:#22c55e; color:#000; }
 .btn-restore:hover { background:#16a34a; }
 .restore-result { margin-top:10px; padding:8px; border-radius:6px; font-size:12px; display:none; }
@@ -1316,6 +1436,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     </div>
     <div class="toggle-group">
         <span style="font-size:11px;color:#6b7280" id="lastBackupTime"></span>
+    </div>
+    <div class="toggle-group">
+        <span id="autostartLabel">开机自启</span>
+        <div class="toggle" id="toggleAutostart" onclick="toggleAutostart()"></div>
     </div>
 </div>
 <div class="auth-dir-bar">
@@ -1397,6 +1521,9 @@ const i18n = {
         btnRestore: '♻️ 恢复文件', btnExportCsv: '📊 导出CSV', btnExportJson: '📊 导出JSON',
         btnImport: '📥 导入账号',
         autoDisable: '自动禁用', autoEnable: '自动解禁', autoBackup: '自动备份', autoCleanup: '自动清理',
+        autostartOn: '开机自启: 开', autostartOff: '开机自启: 关', autostartEnable: '开启开机自启', autostartDisable: '关闭开机自启',
+        autostartWarn: '将添加启动项到注册表，开机后自动运行 Monitor 服务。确定开启吗？',
+        autostartOnlyWindows: '开机自启仅支持 Windows',
         valid: '✅ 有效', noQuota: '⚠️ 无额度', invalid: '❌ 失效', unknown: '❓ 未知', skip: '⏭️ 跳过', total: '📊 总计',
         cfgValid: '✅有效', cfgNoQuota: '⚠️无额度', cfgInvalid: '❌失效', cfgUnknown: '❓未知',
         cfgRetryUnknown: '未知重试', cfgRetryInvalid: '失效重试',
@@ -1406,7 +1533,9 @@ const i18n = {
         justNow: '刚刚', minAgo: '分钟前', hourAgo: '小时前', dayAgo: '天前',
         daysLater: '天后', hoursLater: '小时后', aboutToReset: '即将重置', daysAgo: '天前',
         backupTitle: '♻️ 从备份恢复文件', backupHint: '只恢复 data/ 目录中不存在的文件，已有文件不会被覆盖',
-        noBackups: '暂无备份', btnRestoreFile: '恢复', restoring: '恢复中...',
+        noBackups: '暂无备份', btnRestoreFile: '恢复', btnDeleteBackup: '删除', restoring: '恢复中...',
+        deleteBackupConfirm: '确定要删除此备份吗？此操作不可恢复。',
+        deleteBackupOk: '✅ 已删除', deleteBackupFail: '❌ 删除失败',
         backupRunning: '备份中...', backupOk: '✅ 备份成功', backupFail: '❌ 失败', networkError: '❌ 网络错误',
         enableRunning: '解禁中...', enableOk: '✅ 已解禁', enableFail: '❌ 失败',
         enableConfirm: '确定要解禁所有账号吗？这将把所有 .invalid/.no_quota/.unknown 文件恢复为 .json',
@@ -1451,6 +1580,9 @@ const i18n = {
         btnRestore: '♻️ Restore', btnExportCsv: '📊 Export CSV', btnExportJson: '📊 Export JSON',
         btnImport: '📥 Import',
         autoDisable: 'Auto Disable', autoEnable: 'Auto Enable', autoBackup: 'Auto Backup', autoCleanup: 'Auto Cleanup',
+        autostartOn: 'Autostart: On', autostartOff: 'Autostart: Off', autostartEnable: 'Enable Autostart', autostartDisable: 'Disable Autostart',
+        autostartWarn: 'This will add a startup entry to the registry to auto-run Monitor on boot. Enable?',
+        autostartOnlyWindows: 'Autostart only supports Windows',
         valid: '✅ Valid', noQuota: '⚠️ No Quota', invalid: '❌ Invalid', unknown: '❓ Unknown', skip: '⏭️ Skip', total: '📊 Total',
         cfgValid: '✅Valid', cfgNoQuota: '⚠️No Quota', cfgInvalid: '❌Invalid', cfgUnknown: '❓Unknown',
         cfgRetryUnknown: 'Retry Unknown', cfgRetryInvalid: 'Retry Invalid',
@@ -1460,7 +1592,9 @@ const i18n = {
         justNow: 'just now', minAgo: 'm ago', hourAgo: 'h ago', dayAgo: 'd ago',
         daysLater: 'd later', hoursLater: 'h later', aboutToReset: 'Reset soon', daysAgo: 'd ago',
         backupTitle: '♻️ Restore from Backup', backupHint: 'Only restore files that do not exist in data/. Existing files will not be overwritten.',
-        noBackups: 'No backups', btnRestoreFile: 'Restore', restoring: 'Restoring...',
+        noBackups: 'No backups', btnRestoreFile: 'Restore', btnDeleteBackup: 'Delete', restoring: 'Restoring...',
+        deleteBackupConfirm: 'Are you sure you want to delete this backup? This action cannot be undone.',
+        deleteBackupOk: '✅ Deleted', deleteBackupFail: '❌ Delete failed',
         backupRunning: 'Backing up...', backupOk: '✅ Backup OK', backupFail: '❌ Failed', networkError: '❌ Network Error',
         enableRunning: 'Enabling...', enableOk: '✅ Enabled', enableFail: '❌ Failed',
         enableConfirm: 'Are you sure to enable all accounts? This will rename all .invalid/.no_quota/.unknown files back to .json',
@@ -1578,6 +1712,7 @@ function updateUI() {
         document.getElementById('toggleEnable').className = 'toggle' + (data.auto_enable ? ' active' : '');
         document.getElementById('toggleBackup').className = 'toggle' + (data.auto_backup ? ' active' : '');
         document.getElementById('toggleCleanup').className = 'toggle' + (data.auto_cleanup ? ' active' : '');
+        fetch('/api/autostart').then(r=>r.json()).then(d => { _autostartEnabled = d.enabled; updateAutostartUI(); });
         const lbt = document.getElementById('lastBackupTime');
         const bSize = data.backup_size_kb >= 1024 ? (data.backup_size_kb / 1024).toFixed(1) + 'MB' : (data.backup_size_kb || 0) + 'KB';
         const bInfo = t('totalBackup') + ': ' + (data.backup_count || 0) + t('backupCopies') + ' ' + bSize;
@@ -1690,6 +1825,31 @@ function confirmCleanup() {
     document.getElementById('cleanupWarnModal').classList.remove('show');
     fetch('/api/toggle', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key:'auto_cleanup'})}).then(()=>updateUI());
 }
+var _autostartEnabled = false;
+function toggleAutostart() {
+    if (!_autostartEnabled) {
+        if (!confirm(t('autostartWarn'))) return;
+    }
+    fetch('/api/autostart', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({enable:!_autostartEnabled})}).then(r=>r.json()).then(data => {
+        if (data.status === 'ok') {
+            _autostartEnabled = data.enabled;
+            updateAutostartUI();
+        } else {
+            alert(data.message || 'error');
+        }
+    });
+}
+function updateAutostartUI() {
+    var el = document.getElementById('toggleAutostart');
+    var label = document.getElementById('autostartLabel');
+    if (_autostartEnabled) {
+        el.classList.add('active');
+        label.textContent = t('autostartOn');
+    } else {
+        el.classList.remove('active');
+        label.textContent = t('autostartOff');
+    }
+}
 function saveMaxBackups() {
     var val = parseInt(document.getElementById('cfgMaxBackups').value);
     if (isNaN(val) || val < 1) { val = 1; document.getElementById('cfgMaxBackups').value = 1; }
@@ -1758,7 +1918,7 @@ function showRestore() {
         let html = '';
         for (const b of data.backups) {
             const label = b.name.replace('backup_','').replace('.zip','').replace(/_/g,' ').replace(/(\\d{4}) (\\d{2})(\\d{2}) (\\d{2})(\\d{2})(\\d{2})/, '$1-$2-$3 $4:$5:$6');
-            html += '<div class="backup-item"><span class="name">' + label + '</span><span class="count">' + b.files + ' files ' + (b.size_kb ? b.size_kb + 'KB' : '') + '</span><button class="btn-restore" onclick="doRestore(`' + b.name + '`)">' + t('btnRestoreFile') + '</button></div>';
+            html += '<div class="backup-item"><span class="name">' + label + '</span><span class="count">' + b.files + ' files ' + (b.size_kb ? b.size_kb + 'KB' : '') + '</span><button class="btn-restore" onclick="doRestore(\'' + b.name + '\')">' + t('btnRestoreFile') + '</button><button class="btn-delete-backup" onclick="doDeleteBackup(\'' + b.name + '\')">' + t('btnDeleteBackup') + '</button></div>';
         }
         list.innerHTML = html;
     });
@@ -1781,6 +1941,22 @@ function doRestore(backupName) {
         }
         updateUI();
     });
+}
+function doDeleteBackup(backupName) {
+    if (!confirm(t('deleteBackupConfirm'))) return;
+    fetch('/api/delete-backup', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({backup:backupName})}).then(r=>r.json()).then(data => {
+        if (data.status === 'ok') {
+            log_info_local(t('deleteBackupOk') + ': ' + backupName);
+        } else {
+            log_info_local(t('deleteBackupFail') + ': ' + (data.message || 'error'));
+        }
+        loadBackups();
+        updateUI();
+    });
+}
+function log_info_local(msg) {
+    var el = document.getElementById('logArea');
+    if (el) { el.textContent += '\\n' + msg; el.scrollTop = el.scrollHeight; }
 }
 function exportAccounts(fmt) {
     window.open('/api/export?format=' + fmt, '_blank');
