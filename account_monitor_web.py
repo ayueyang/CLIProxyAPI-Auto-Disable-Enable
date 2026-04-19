@@ -1405,6 +1405,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .log-error { color: #ef4444; }
 .log-time { color: #6b7280; margin-right: 6px; }
 .accounts-scroll { max-height: calc(100vh - 400px); overflow: auto; }
+.filename-cell { cursor: pointer; }
+.filename-cell .filename-toggle { color: #89b4fa; }
+.filename-cell .filename-full { display: none; color: #a6adc8; font-size: 11px; margin-top: 2px; word-break: break-all; }
+.filename-cell.expanded .filename-full { display: block; }
+.filename-cell.expanded .filename-toggle { color: #a6adc8; }
 .last-check-time { position: relative; }
 .relative-time { font-size: 10px; color: #6b7280; display: block; margin-top: 2px; }
 .countdown { font-size: 10px; color: #6b7280; margin-top: 2px; }
@@ -1530,7 +1535,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         <div class="panel-title">📋 账号列表</div>
         <div class="accounts-scroll">
             <table class="accounts-table">
-                <thead><tr><th data-col="0">文件名</th><th data-col="1">邮箱</th><th data-col="2">状态</th><th data-col="3">原因</th><th data-col="4">重置时间</th><th data-col="5">上次检查</th></tr></thead>
+                <thead><tr><th data-col="0">邮箱</th><th data-col="1">状态</th><th data-col="2">原因</th><th data-col="3">重置时间</th><th data-col="4">上次检查</th></tr></thead>
                 <tbody id="accountsBody"></tbody>
             </table>
         </div>
@@ -1754,7 +1759,7 @@ function applyLang() {
     document.getElementById('layoutSingle').title = t('layoutSingle');
     document.getElementById('layoutDouble').title = t('layoutDouble');
     const ths = document.querySelectorAll('.accounts-table thead th');
-    if (ths.length >= 6) { ths[0].textContent = t('thFilename'); ths[1].textContent = t('thEmail'); ths[2].textContent = t('thStatus'); ths[3].textContent = t('thReason'); ths[4].textContent = t('thResetTime'); ths[5].textContent = t('thLastCheck'); }
+    if (ths.length >= 5) { ths[0].textContent = t('thEmail'); ths[1].textContent = t('thStatus'); ths[2].textContent = t('thReason'); ths[3].textContent = t('thResetTime'); ths[4].textContent = t('thLastCheck'); }
     document.querySelector('.modal h2').textContent = t('backupTitle');
     document.querySelector('.modal p').textContent = t('backupHint');
     document.getElementById('authDirLabel').textContent = t('authDirLabel');
@@ -1768,7 +1773,7 @@ setLayout(_layoutMode);
 (function initResize() {
     const table = document.querySelector('.accounts-table');
     if (!table) return;
-    const defaultWidths = [180, 150, 70, 150, 90, 100];
+    const defaultWidths = [160, 70, 120, 90, 80];
     const colWidths = [...defaultWidths];
     const colgroup = document.createElement('colgroup');
     const cols = [];
@@ -1884,7 +1889,7 @@ function updateUI() {
             const relativeTime = a.last_check ? formatRelativeTime(a.last_check) : '';
             const resetTime = a.reset_at ? a.reset_at.replace('T',' ').substring(0,16) : '-';
             const resetDisplay = a.reset_at ? (() => { const d = new Date(a.reset_at); const now = new Date(); const diffMs = d - now; const diffDays = Math.ceil(diffMs / 86400000); const diffHours = Math.ceil(diffMs / 3600000); const dateStr = (d.getMonth()+1) + '/' + d.getDate(); if (diffDays > 1) return dateStr + '(' + diffDays + t('daysLater') + ')'; if (diffDays === 1) return dateStr + '(1' + t('daysLater') + ')'; if (diffHours > 0) return diffHours + t('hoursLater'); if (diffHours === 0) return t('aboutToReset'); return dateStr + '(' + Math.abs(diffDays) + t('daysAgo') + ')'; })() : '-';
-            rows += '<tr><td title="' + a.filename + '">' + a.filename + '</td><td title="' + (a.email||'-') + '">' + (a.email||'-') + '</td><td>' + badge + '</td><td title="' + a.reason + '">' + a.reason + '</td><td class="reset-time" title="' + resetTime + '">' + resetDisplay + '</td><td class="last-check-time">' + checkTime + '<span class="relative-time">' + relativeTime + '</span></td></tr>';
+            rows += '<tr><td class="filename-cell" title="' + a.filename + '"><span class="filename-toggle" onclick="this.parentElement.classList.toggle(&apos;expanded&apos;)">' + (a.email||a.filename) + '</span><span class="filename-full">' + a.filename + '</span></td><td>' + badge + '</td><td title="' + a.reason + '">' + a.reason + '</td><td class="reset-time" title="' + resetTime + '">' + resetDisplay + '</td><td class="last-check-time">' + checkTime + '<span class="relative-time">' + relativeTime + '</span></td></tr>';
         }
         tbody.innerHTML = rows;
         document.getElementById('countValid').textContent = valid;
