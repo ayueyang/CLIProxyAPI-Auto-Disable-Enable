@@ -1,0 +1,31 @@
+services:
+  cliproxyapi:
+    image: cliproxyapi:latest
+    container_name: cliproxyapi
+    ports:
+      - "8317:8317"
+    volumes:
+      - cliproxyapi-data:/app/data
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+
+  monitor:
+    build: .
+    container_name: cliproxyapi-monitor
+    ports:
+      - "8320:8320"
+    volumes:
+      - cliproxyapi-data:/app/data:ro
+    environment:
+      - AUTH_DIR=/app/data
+      - CLIPROXYAPI_MANAGEMENT_KEY=admin123
+      - CLIPROXYAPI_URL=http://cliproxyapi:8317
+      - TZ=Asia/Shanghai
+    depends_on:
+      - cliproxyapi
+    restart: unless-stopped
+
+volumes:
+  cliproxyapi-data:

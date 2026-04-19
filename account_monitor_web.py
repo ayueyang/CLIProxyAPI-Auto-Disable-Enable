@@ -112,6 +112,8 @@ class MonitorState:
         self.auto_disable = True
         self.auto_enable = True
         self.auto_backup = True
+        self.auto_cleanup = False
+        self.max_backups = 30
         self.last_backup_time: Optional[str] = None
         self.scan_count = 0
         self.last_scan_time: Optional[str] = None
@@ -590,7 +592,8 @@ def auto_backup_data(auth_dir: Path) -> None:
         log_info(f"[BACKUP] {count} files -> backups/{ts}.zip ({size_kb:.0f}KB)")
     except Exception as e:
         log_error(f"[BACKUP] Failed: {e}")
-    _cleanup_old_backups(auth_dir)
+    if monitor_state.auto_cleanup:
+        _cleanup_old_backups(auth_dir)
 
 def _cleanup_old_backups(auth_dir: Path) -> None:
     backups_root = auth_dir / "backups"
@@ -598,8 +601,9 @@ def _cleanup_old_backups(auth_dir: Path) -> None:
         return
     try:
         zips = sorted([f for f in backups_root.iterdir() if f.is_file() and f.name.startswith("backup_") and f.name.endswith(".zip")])
-        if len(zips) > MAX_BACKUPS:
-            for old_zip in zips[:-MAX_BACKUPS]:
+        max_keep = monitor_state.max_backups
+        if len(zips) > max_keep:
+            for old_zip in zips[:-max_keep]:
                 try:
                     old_zip.unlink()
                     log_info(f"[CLEANUP] Removed old backup: {old_zip.name}")
@@ -733,26 +737,33 @@ def _do_scan(auth_dir: Path, management: ManagementClient, timeout: int, scan_fi
             monitor_state.last_scan_by_group[g] = time.time()
 
 def monitor_loop(auth_dir: Path, management: ManagementClient, timeout: int) -> None:
+    first_scan = True
     while not stop_event.is_set():
         with monitor_lock:
             if not monitor_state.running:
                 break
             monitor_state.scan_count += 1
             monitor_state.last_scan_time = now_local().isoformat()
-        now_ts = time.time()
-        groups_due = []
-        for g in ("valid", "no_quota", "invalid", "unknown"):
-            last = monitor_state.last_scan_by_group.get(g, 0)
-            interval = _get_interval_for_group(g)
-            if (now_ts - last) >= interval:
-                groups_due.append(g)
-        if groups_due:
-            log_info(f"=== Scan cycle #{monitor_state.scan_count} started (groups due: {', '.join(groups_due)}) ===")
-            scan_accounts(auth_dir, management, timeout, force=False)
+        if first_scan:
+            log_info(f"=== Scan cycle #{monitor_state.scan_count} started (initial scan) ===")
+            scan_accounts(auth_dir, management, timeout, force=True)
             log_info(f"=== Scan cycle #{monitor_state.scan_count} completed ===")
+            first_scan = False
         else:
-            with monitor_lock:
-                monitor_state.scan_count -= 1
+            now_ts = time.time()
+            groups_due = []
+            for g in ("valid", "no_quota", "invalid", "unknown"):
+                last = monitor_state.last_scan_by_group.get(g, 0)
+                interval = _get_interval_for_group(g)
+                if (now_ts - last) >= interval:
+                    groups_due.append(g)
+            if groups_due:
+                log_info(f"=== Scan cycle #{monitor_state.scan_count} started (groups due: {', '.join(groups_due)}) ===")
+                scan_accounts(auth_dir, management, timeout, force=False)
+                log_info(f"=== Scan cycle #{monitor_state.scan_count} completed ===")
+            else:
+                with monitor_lock:
+                    monitor_state.scan_count -= 1
         tick = 10
         for _ in range(tick):
             if stop_event.is_set():
@@ -760,10 +771,30 @@ def monitor_loop(auth_dir: Path, management: ManagementClient, timeout: int) -> 
             time.sleep(1)
 
 def _resolve_auth_dir(cfg: Dict[str, Any], override: str = "") -> Path:
-    auth_dir_str = override or cfg.get("auth_dir", "data")
+    auth_dir_str = override or os.environ.get("AUTH_DIR", "") or cfg.get("auth_dir", "data")
     if Path(auth_dir_str).is_absolute():
         return Path(auth_dir_str).resolve()
     return (Path(__file__).resolve().parent / auth_dir_str).resolve()
+
+def _count_backups(auth_dir: Path) -> int:
+    backups_root = auth_dir / "backups"
+    if not backups_root.exists():
+        return 0
+    return sum(1 for f in backups_root.iterdir() if f.is_file() and f.name.startswith("backup_") and f.name.endswith(".zip"))
+
+def _backup_size(auth_dir: Path) -> float:
+    backups_root = auth_dir / "backups"
+    if not backups_root.exists():
+        return 0.0
+    total = sum(f.stat().st_size for f in backups_root.iterdir() if f.is_file() and f.name.startswith("backup_") and f.name.endswith(".zip"))
+    return round(total / 1024, 1)
+
+def _get_management_base_url(cfg: Dict[str, Any]) -> str:
+    override = os.environ.get("CLIPROXYAPI_URL", "").strip()
+    if override:
+        return override.rstrip("/") + MANAGEMENT_BASE_PATH
+    port = cfg.get("port", 8317)
+    return f"http://127.0.0.1:{port}{MANAGEMENT_BASE_PATH}"
 
 def create_app(config_path: str = "", auth_dir_override: str = "") -> Flask:
     app = Flask(__name__)
@@ -790,6 +821,8 @@ def create_app(config_path: str = "", auth_dir_override: str = "") -> Flask:
                 "auto_disable": monitor_state.auto_disable,
                 "auto_enable": monitor_state.auto_enable,
                 "auto_backup": monitor_state.auto_backup,
+                "auto_cleanup": monitor_state.auto_cleanup,
+                "max_backups": monitor_state.max_backups,
                 "last_backup_time": monitor_state.last_backup_time,
                 "scan_count": monitor_state.scan_count,
                 "last_scan_time": monitor_state.last_scan_time,
@@ -801,7 +834,27 @@ def create_app(config_path: str = "", auth_dir_override: str = "") -> Flask:
                 "retry_invalid": monitor_state.retry_invalid,
                 "next_scan": next_scan,
                 "accounts": {k: {"filename": v.filename, "email": v.email, "provider": v.provider, "status": v.status, "reason": v.reason, "last_check": v.last_check, "disabled": v.disabled, "http_status": v.http_status, "error_code": v.error_code, "reset_at": v.reset_at, "refreshed": v.refreshed, "plan_type": v.plan_type} for k, v in monitor_state.accounts.items()},
+                "auth_dir": str(app.config["AUTH_DIR"]),
+                "backup_count": _count_backups(app.config["AUTH_DIR"]),
+                "backup_size_kb": _backup_size(app.config["AUTH_DIR"]),
             })
+    @app.route("/api/auth-dir", methods=["GET"])
+    def api_get_auth_dir():
+        return jsonify({"auth_dir": str(app.config["AUTH_DIR"])})
+    @app.route("/api/auth-dir", methods=["POST"])
+    def api_set_auth_dir():
+        data = request.get_json(silent=True) or {}
+        new_dir = data.get("auth_dir", "").strip()
+        if not new_dir:
+            return jsonify({"status": "error", "message": "empty path"})
+        p = Path(new_dir)
+        if not p.exists():
+            return jsonify({"status": "error", "message": "directory does not exist"})
+        if not p.is_dir():
+            return jsonify({"status": "error", "message": "not a directory"})
+        app.config["AUTH_DIR"] = p
+        log_info(f"Auth dir changed to: {p}")
+        return jsonify({"status": "ok", "auth_dir": str(p)})
     @app.route("/api/logs")
     def api_logs():
         after = int(request.args.get("after", 0))
@@ -816,7 +869,6 @@ def create_app(config_path: str = "", auth_dir_override: str = "") -> Flask:
                 return jsonify({"status": "already_running"})
             monitor_state.running = True
         cfg = app.config["CLI_CONFIG"]
-        port = cfg.get("port", 8317)
         auth_dir = app.config["AUTH_DIR"]
         management_key = os.environ.get("CLIPROXYAPI_MANAGEMENT_KEY", "")
         if not management_key:
@@ -825,7 +877,7 @@ def create_app(config_path: str = "", auth_dir_override: str = "") -> Flask:
                 monitor_state.running = False
             return jsonify({"status": "error", "message": "management key not set"})
         management = ManagementClient(
-            base_url=f"http://127.0.0.1:{port}{MANAGEMENT_BASE_PATH}",
+            base_url=_get_management_base_url(cfg),
             management_key=management_key,
         )
         if not management.validate():
@@ -833,7 +885,14 @@ def create_app(config_path: str = "", auth_dir_override: str = "") -> Flask:
             with monitor_lock:
                 monitor_state.running = False
             return jsonify({"status": "error", "message": "cannot connect to management API"})
+        stop_event.set()
+        time.sleep(0.5)
+        if scan_thread and scan_thread.is_alive():
+            scan_thread.join(timeout=3)
         stop_event.clear()
+        with monitor_lock:
+            monitor_state.last_scan_by_group.clear()
+            monitor_state.scan_count = 0
         scan_thread = threading.Thread(target=monitor_loop, args=(auth_dir, management, 90), daemon=True)
         scan_thread.start()
         log_info("Monitor started")
@@ -851,14 +910,13 @@ def create_app(config_path: str = "", auth_dir_override: str = "") -> Flask:
             if monitor_state.scanning:
                 return jsonify({"status": "already_scanning"})
         cfg = app.config["CLI_CONFIG"]
-        port = cfg.get("port", 8317)
         auth_dir = app.config["AUTH_DIR"]
         management_key = os.environ.get("CLIPROXYAPI_MANAGEMENT_KEY", "")
         if not management_key:
             log_error("Management key not set. Set CLIPROXYAPI_MANAGEMENT_KEY env var.")
             return jsonify({"status": "error", "message": "management key not set"})
         management = ManagementClient(
-            base_url=f"http://127.0.0.1:{port}{MANAGEMENT_BASE_PATH}",
+            base_url=_get_management_base_url(cfg),
             management_key=management_key,
         )
         if not management.validate():
@@ -873,7 +931,7 @@ def create_app(config_path: str = "", auth_dir_override: str = "") -> Flask:
     def api_toggle():
         data = request.json or {}
         key = data.get("key")
-        if key not in ["auto_disable", "auto_enable", "auto_backup"]:
+        if key not in ["auto_disable", "auto_enable", "auto_backup", "auto_cleanup"]:
             return jsonify({"status": "error", "message": "invalid key"})
         with monitor_lock:
             current = getattr(monitor_state, key)
@@ -884,10 +942,13 @@ def create_app(config_path: str = "", auth_dir_override: str = "") -> Flask:
     def api_intervals():
         data = request.json or {}
         updated = {}
-        for key in ("interval_valid", "interval_no_quota", "interval_invalid", "interval_unknown", "retry_unknown", "retry_invalid"):
+        for key in ("interval_valid", "interval_no_quota", "interval_invalid", "interval_unknown", "retry_unknown", "retry_invalid", "max_backups"):
             if key in data:
                 val = data[key]
-                if not isinstance(val, int) or val < 10:
+                if key == "max_backups":
+                    if not isinstance(val, int) or val < 1:
+                        continue
+                elif not isinstance(val, int) or val < 10:
                     if key.startswith("retry"):
                         if val < 0:
                             continue
@@ -1197,6 +1258,17 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .lang-btn { padding:2px 10px; font-size:12px; cursor:pointer; border:none; background:#313244; color:#a6adc8; transition:all .15s; }
 .lang-btn.active { background:#89b4fa; color:#1e1e2e; font-weight:600; }
 .lang-btn:hover:not(.active) { background:#45475a; }
+.auth-dir-bar { background:#1e1e2e; padding:8px 30px; border-bottom:1px solid #313244; display:flex; align-items:center; gap:8px; font-size:13px; }
+.auth-dir-label { color:#a6adc8; white-space:nowrap; }
+.auth-dir-path { color:#89b4fa; font-family:'Cascadia Code','Fira Code',monospace; font-size:12px; background:#313244; padding:3px 10px; border-radius:4px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.btn-dir-change { background:#45475a; color:#cdd6f4; padding:4px 12px; border:none; border-radius:4px; cursor:pointer; font-size:12px; font-weight:600; }
+.btn-dir-change:hover { background:#585b70; }
+.btn-dir-help { background:#313244; color:#f9e2af; padding:4px 12px; border:none; border-radius:4px; cursor:pointer; font-size:12px; font-weight:600; }
+.btn-dir-help:hover { background:#45475a; }
+.help-modal-content { color:#cdd6f4; font-size:13px; line-height:1.8; }
+.help-modal-content code { background:#313244; padding:2px 6px; border-radius:3px; font-family:'Cascadia Code','Fira Code',monospace; font-size:12px; color:#f9e2af; }
+.help-modal-content .step { margin:8px 0; padding:8px 12px; background:#313244; border-radius:6px; border-left:3px solid #89b4fa; }
+.help-modal-content .warn { background:#f59e0b22; border-left-color:#f59e0b; color:#f9e2af; }
 </style>
 </head>
 <body>
@@ -1236,8 +1308,21 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         <div class="toggle active" id="toggleBackup" onclick="toggleSetting('auto_backup')"></div>
     </div>
     <div class="toggle-group">
+        <span>自动清理</span>
+        <div class="toggle" id="toggleCleanup" onclick="toggleSetting('auto_cleanup')"></div>
+        <span style="font-size:11px;color:#6b7280;margin-left:4px" id="maxBackupsLabel">保留</span>
+        <input type="number" id="cfgMaxBackups" value="30" min="1" max="9999" style="width:48px;font-size:11px;padding:2px 4px;border:1px solid #4b5563;border-radius:4px;background:#1e1e2e;color:#cdd6f4;text-align:center" onchange="saveMaxBackups()">
+        <span style="font-size:11px;color:#6b7280" id="maxBackupsUnit">份</span>
+    </div>
+    <div class="toggle-group">
         <span style="font-size:11px;color:#6b7280" id="lastBackupTime"></span>
     </div>
+</div>
+<div class="auth-dir-bar">
+    <span class="auth-dir-label" id="authDirLabel">📂 账号目录：</span>
+    <span class="auth-dir-path" id="authDirPath">-</span>
+    <button class="btn btn-dir-change" onclick="changeAuthDir()">✏️ <span id="btnChangeDirText">修改路径</span></button>
+    <button class="btn btn-dir-help" onclick="showDirHelp()">❓ <span id="btnHelpText">教程</span></button>
 </div>
 <div class="stats" id="statsArea">
     <div class="stat-card stat-valid"><div class="number" id="countValid">0</div><div class="label">✅ 有效</div><div class="countdown" id="cdValid"></div></div>
@@ -1280,6 +1365,24 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         <div class="restore-result" id="restoreResult"></div>
     </div>
 </div>
+<div class="modal-overlay" id="dirHelpModal">
+    <div class="modal" style="width:560px">
+        <button class="modal-close" onclick="closeDirHelp()">&times;</button>
+        <h2 id="dirHelpTitle">📂 账号目录设置教程</h2>
+        <div class="help-modal-content" id="dirHelpContent"></div>
+    </div>
+</div>
+<div class="modal-overlay" id="cleanupWarnModal">
+    <div class="modal" style="width:480px">
+        <h2 id="cleanupWarnTitle">⚠️ 开启自动清理</h2>
+        <p style="color:#f87171;font-size:13px;margin:12px 0" id="cleanupWarnText"></p>
+        <p style="color:#a6adc8;font-size:12px;margin:8px 0" id="cleanupWarnDetail"></p>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+            <button class="btn" style="background:#4b5563;color:#fff" onclick="cancelCleanup()" id="cleanupCancelBtn">取消</button>
+            <button class="btn" style="background:#ef4444;color:#fff" onclick="confirmCleanup()" id="cleanupConfirmBtn">确认开启</button>
+        </div>
+    </div>
+</div>
 <script>
 let lastLogCount = 0;
 let currentLang = localStorage.getItem('lang') || 'zh';
@@ -1293,7 +1396,7 @@ const i18n = {
         btnBackup: '💾 立即备份', btnEnableAll: '🔓 一键解禁所有',
         btnRestore: '♻️ 恢复文件', btnExportCsv: '📊 导出CSV', btnExportJson: '📊 导出JSON',
         btnImport: '📥 导入账号',
-        autoDisable: '自动禁用', autoEnable: '自动解禁', autoBackup: '自动备份',
+        autoDisable: '自动禁用', autoEnable: '自动解禁', autoBackup: '自动备份', autoCleanup: '自动清理',
         valid: '✅ 有效', noQuota: '⚠️ 无额度', invalid: '❌ 失效', unknown: '❓ 未知', skip: '⏭️ 跳过', total: '📊 总计',
         cfgValid: '✅有效', cfgNoQuota: '⚠️无额度', cfgInvalid: '❌失效', cfgUnknown: '❓未知',
         cfgRetryUnknown: '未知重试', cfgRetryInvalid: '失效重试',
@@ -1310,6 +1413,34 @@ const i18n = {
         scanRunning: '扫描中...', scanOk: '✅ 扫描完成', scanFail: '❌ 失败',
         restoreOk: '✅ 恢复成功', restoreFail: '❌ 恢复失败',
         intervalSaved: '✅ 配置已保存',
+        authDirLabel: '📂 账号目录：',
+        btnChangeDir: '✏️ 修改路径', btnHelp: '❓ 教程',
+        dirHelpTitle: '📂 账号目录设置教程',
+        dirHelpStep1: '1️⃣ 默认账号目录',
+        dirHelpStep1Text: '账号文件通常位于 CLIProxyAPI 安装目录下的 <code>data</code> 文件夹。<br>当前路径：<code id="helpCurrentDir">-</code>',
+        dirHelpStep2: '2️⃣ 如何修改路径',
+        dirHelpStep2Text: '点击「修改路径」按钮，输入新的账号目录完整路径，按回车确认。<br>路径必须是已存在的文件夹。',
+        dirHelpStep3: '3️⃣ 启动时指定路径（推荐）',
+        dirHelpStep3Text: '方式一：启动参数 <code>--auth-dir</code><br><code>python account_monitor_web.py --auth-dir "你的路径"</code><br>方式二：环境变量 <code>AUTH_DIR</code><br><code>set AUTH_DIR=D:\\path\\to\\data</code><br>方式三：配置文件 <code>config.yaml</code> 中设置 <code>auth-dir</code>',
+        dirHelpStep4: '4️⃣ Docker 容器部署',
+        dirHelpStep4Text: '使用 <code>docker-compose.yml</code> 部署时，通过环境变量配置：<br><code>AUTH_DIR=/app/data</code>（容器内路径）<br><code>CLIPROXYAPI_URL=http://cliproxyapi:8317</code>（容器间通信）<br>数据目录通过 volume 映射共享。',
+        dirHelpWarn: '⚠️ 注意',
+        dirHelpWarnText: '修改路径后需要重新启动监控才能扫描新目录的账号。<br>路径错误会导致扫描 0 个账号。<br>如果启动后显示 0 个账号，请检查路径是否正确。<br>Docker 中路径为容器内路径，不是宿主机路径。',
+        changeDirPrompt: '请输入新的账号目录路径：',
+        dirChanged: '✅ 路径已更新', dirChangeFail: '❌ 路径更新失败',
+        statusValid: '有效', statusNoQuota: '无额度', statusInvalid: '失效', statusUnknown: '未知', statusSkip: '跳过',
+        backupTime: '备份',
+        backupCopies: '份',
+        totalBackup: '总备份',
+        cleanupWarnTitle: '⚠️ 开启自动清理',
+        cleanupWarnText: '开启自动清理后，当备份数量超过上限时，最旧的备份将被自动删除，此操作不可恢复！',
+        cleanupWarnDetail: '当前设置：最多保留 {max} 份备份，超出部分将按时间从旧到新删除。',
+        cleanupWarnConfirm: '确认开启',
+        cleanupWarnCancel: '取消',
+        maxBackupsLabel: '保留',
+        maxBackupsUnit: '份',
+        importRunning: '导入中...', importOk: '✅ 导入', importFail: '❌ 失败', importNetworkError: '❌ 网络错误',
+        scanSoon: '⏱ 即将扫描',
     },
     en: {
         title: '🛡️ CLIProxyAPI Codex Auto Disable/Enable',
@@ -1319,7 +1450,7 @@ const i18n = {
         btnBackup: '💾 Backup Now', btnEnableAll: '🔓 Enable All',
         btnRestore: '♻️ Restore', btnExportCsv: '📊 Export CSV', btnExportJson: '📊 Export JSON',
         btnImport: '📥 Import',
-        autoDisable: 'Auto Disable', autoEnable: 'Auto Enable', autoBackup: 'Auto Backup',
+        autoDisable: 'Auto Disable', autoEnable: 'Auto Enable', autoBackup: 'Auto Backup', autoCleanup: 'Auto Cleanup',
         valid: '✅ Valid', noQuota: '⚠️ No Quota', invalid: '❌ Invalid', unknown: '❓ Unknown', skip: '⏭️ Skip', total: '📊 Total',
         cfgValid: '✅Valid', cfgNoQuota: '⚠️No Quota', cfgInvalid: '❌Invalid', cfgUnknown: '❓Unknown',
         cfgRetryUnknown: 'Retry Unknown', cfgRetryInvalid: 'Retry Invalid',
@@ -1336,6 +1467,34 @@ const i18n = {
         scanRunning: 'Scanning...', scanOk: '✅ Scan done', scanFail: '❌ Failed',
         restoreOk: '✅ Restored', restoreFail: '❌ Restore failed',
         intervalSaved: '✅ Config saved',
+        authDirLabel: '📂 Auth Dir: ',
+        btnChangeDir: '✏️ Change Path', btnHelp: '❓ Help',
+        dirHelpTitle: '📂 Auth Directory Setup Guide',
+        dirHelpStep1: '1️⃣ Default Auth Directory',
+        dirHelpStep1Text: 'Account files are usually in the <code>data</code> folder under CLIProxyAPI installation.<br>Current path: <code id="helpCurrentDir">-</code>',
+        dirHelpStep2: '2️⃣ How to Change Path',
+        dirHelpStep2Text: 'Click "Change Path" button, enter the full path of the new auth directory, press Enter to confirm.<br>The path must be an existing folder.',
+        dirHelpStep3: '3️⃣ Specify Path at Startup (Recommended)',
+        dirHelpStep3Text: 'Option 1: Startup argument <code>--auth-dir</code><br><code>python account_monitor_web.py --auth-dir "your_path"</code><br>Option 2: Environment variable <code>AUTH_DIR</code><br><code>export AUTH_DIR=/path/to/data</code><br>Option 3: Config file <code>config.yaml</code> set <code>auth-dir</code>',
+        dirHelpStep4: '4️⃣ Docker Container Deployment',
+        dirHelpStep4Text: 'When deploying with <code>docker-compose.yml</code>, configure via environment variables:<br><code>AUTH_DIR=/app/data</code> (container path)<br><code>CLIPROXYAPI_URL=http://cliproxyapi:8317</code> (inter-container communication)<br>Data directory shared via volume mapping.',
+        dirHelpWarn: '⚠️ Note',
+        dirHelpWarnText: 'After changing the path, restart the monitor to scan accounts in the new directory.<br>Wrong path will result in 0 accounts scanned.<br>If 0 accounts are shown after startup, check if the path is correct.<br>In Docker, use container paths, not host paths.',
+        changeDirPrompt: 'Enter new auth directory path:',
+        dirChanged: '✅ Path updated', dirChangeFail: '❌ Path update failed',
+        statusValid: 'Valid', statusNoQuota: 'No Quota', statusInvalid: 'Invalid', statusUnknown: 'Unknown', statusSkip: 'Skip',
+        backupTime: 'Backup',
+        backupCopies: 'copies',
+        totalBackup: 'Total Backups',
+        cleanupWarnTitle: '⚠️ Enable Auto Cleanup',
+        cleanupWarnText: 'When auto cleanup is enabled, the oldest backups will be automatically deleted when the count exceeds the limit. This action cannot be undone!',
+        cleanupWarnDetail: 'Current setting: keep up to {max} backups. Excess backups will be deleted from oldest to newest.',
+        cleanupWarnConfirm: 'Confirm Enable',
+        cleanupWarnCancel: 'Cancel',
+        maxBackupsLabel: 'Keep',
+        maxBackupsUnit: 'copies',
+        importRunning: 'Importing...', importOk: '✅ Imported', importFail: '❌ Failed', importNetworkError: '❌ Network Error',
+        scanSoon: '⏱ Scanning soon',
     }
 };
 
@@ -1363,6 +1522,9 @@ function applyLang() {
     document.querySelector('#toggleDisable').previousElementSibling.textContent = t('autoDisable');
     document.querySelector('#toggleEnable').previousElementSibling.textContent = t('autoEnable');
     document.querySelector('#toggleBackup').previousElementSibling.textContent = t('autoBackup');
+    document.querySelector('#toggleCleanup').previousElementSibling.textContent = t('autoCleanup');
+    document.getElementById('maxBackupsLabel').textContent = t('maxBackupsLabel');
+    document.getElementById('maxBackupsUnit').textContent = t('maxBackupsUnit');
     document.querySelectorAll('.stat-card')[0].querySelector('.label').textContent = t('valid');
     document.querySelectorAll('.stat-card')[1].querySelector('.label').textContent = t('noQuota');
     document.querySelectorAll('.stat-card')[2].querySelector('.label').textContent = t('invalid');
@@ -1383,6 +1545,9 @@ function applyLang() {
     if (ths.length >= 6) { ths[0].textContent = t('thFilename'); ths[1].textContent = t('thEmail'); ths[2].textContent = t('thStatus'); ths[3].textContent = t('thReason'); ths[4].textContent = t('thResetTime'); ths[5].textContent = t('thLastCheck'); }
     document.querySelector('.modal h2').textContent = t('backupTitle');
     document.querySelector('.modal p').textContent = t('backupHint');
+    document.getElementById('authDirLabel').textContent = t('authDirLabel');
+    document.getElementById('btnChangeDirText').textContent = t('btnChangeDir').split(' ').slice(1).join(' ');
+    document.getElementById('btnHelpText').textContent = t('btnHelp').split(' ').slice(1).join(' ');
 }
 
 setLang(currentLang);
@@ -1412,11 +1577,14 @@ function updateUI() {
         document.getElementById('toggleDisable').className = 'toggle' + (data.auto_disable ? ' active' : '');
         document.getElementById('toggleEnable').className = 'toggle' + (data.auto_enable ? ' active' : '');
         document.getElementById('toggleBackup').className = 'toggle' + (data.auto_backup ? ' active' : '');
+        document.getElementById('toggleCleanup').className = 'toggle' + (data.auto_cleanup ? ' active' : '');
         const lbt = document.getElementById('lastBackupTime');
+        const bSize = data.backup_size_kb >= 1024 ? (data.backup_size_kb / 1024).toFixed(1) + 'MB' : (data.backup_size_kb || 0) + 'KB';
+        const bInfo = t('totalBackup') + ': ' + (data.backup_count || 0) + t('backupCopies') + ' ' + bSize;
         if (data.last_backup_time) {
-            lbt.textContent = '备份: ' + data.last_backup_time.substring(11, 19);
+            lbt.textContent = t('backupTime') + ': ' + data.last_backup_time.substring(11, 19) + ' | ' + bInfo;
         } else {
-            lbt.textContent = '';
+            lbt.textContent = bInfo;
         }
         document.getElementById('cfgValid').value = data.interval_valid;
         document.getElementById('cfgNoQuota').value = data.interval_no_quota;
@@ -1424,6 +1592,8 @@ function updateUI() {
         document.getElementById('cfgUnknown').value = data.interval_unknown;
         document.getElementById('cfgRetryUnknown').value = data.retry_unknown;
         document.getElementById('cfgRetryInvalid').value = data.retry_invalid;
+        document.getElementById('cfgMaxBackups').value = data.max_backups;
+        document.getElementById('authDirPath').textContent = data.auth_dir || '-';
 
         let valid=0, noQuota=0, invalid=0, unknown=0, skip=0;
         const tbody = document.getElementById('accountsBody');
@@ -1438,7 +1608,8 @@ function updateUI() {
             else if (a.status === 'invalid') invalid++;
             else if (a.status === 'skip') skip++;
             else unknown++;
-            const badge = '<span class="badge badge-' + a.status + '">' + ({valid:'有效',no_quota:'无额度',invalid:'失效',unknown:'未知',skip:'跳过'}[a.status]||a.status) + '</span>';
+            const statusMap = {valid:t('statusValid'),no_quota:t('statusNoQuota'),invalid:t('statusInvalid'),unknown:t('statusUnknown'),skip:t('statusSkip')};
+            const badge = '<span class="badge badge-' + a.status + '">' + (statusMap[a.status]||a.status) + '</span>';
             const checkTime = a.last_check ? a.last_check.replace('T',' ').substring(11,19) : '-';
             const relativeTime = a.last_check ? formatRelativeTime(a.last_check) : '';
             const resetTime = a.reset_at ? a.reset_at.replace('T',' ').substring(0,16) : '-';
@@ -1456,7 +1627,7 @@ function updateUI() {
         const ns = data.next_scan || {};
         function fmtCD(sec) {
             if (!sec && sec !== 0) return '';
-            if (sec <= 0) return '⏱ 即将扫描';
+            if (sec <= 0) return t('scanSoon');
             if (sec < 60) return sec + 's';
             return Math.floor(sec/60) + 'm' + (sec%60) + 's';
         }
@@ -1494,7 +1665,36 @@ function escapeHtml(text) {
 function startMonitor() { fetch('/api/start', {method:'POST'}).then(()=>updateUI()); }
 function stopMonitor() { fetch('/api/stop', {method:'POST'}).then(()=>updateUI()); }
 function runScan() { fetch('/api/scan', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({force:true})}).then(()=>updateUI()); }
-function toggleSetting(key) { fetch('/api/toggle', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key:key})}).then(()=>updateUI()); }
+function toggleSetting(key) {
+    if (key === 'auto_cleanup') {
+        var el = document.getElementById('toggleCleanup');
+        if (!el.classList.contains('active')) {
+            showCleanupWarn();
+            return;
+        }
+    }
+    fetch('/api/toggle', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key:key})}).then(()=>updateUI());
+}
+function showCleanupWarn() {
+    document.getElementById('cleanupWarnTitle').textContent = t('cleanupWarnTitle');
+    document.getElementById('cleanupWarnText').textContent = t('cleanupWarnText');
+    document.getElementById('cleanupWarnDetail').textContent = t('cleanupWarnDetail').replace('{max}', document.getElementById('cfgMaxBackups').value);
+    document.getElementById('cleanupCancelBtn').textContent = t('cleanupWarnCancel');
+    document.getElementById('cleanupConfirmBtn').textContent = t('cleanupWarnConfirm');
+    document.getElementById('cleanupWarnModal').classList.add('show');
+}
+function cancelCleanup() {
+    document.getElementById('cleanupWarnModal').classList.remove('show');
+}
+function confirmCleanup() {
+    document.getElementById('cleanupWarnModal').classList.remove('show');
+    fetch('/api/toggle', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key:'auto_cleanup'})}).then(()=>updateUI());
+}
+function saveMaxBackups() {
+    var val = parseInt(document.getElementById('cfgMaxBackups').value);
+    if (isNaN(val) || val < 1) { val = 1; document.getElementById('cfgMaxBackups').value = 1; }
+    fetch('/api/intervals', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({max_backups:val})});
+}
 function saveConfig() {
     const cfg = {
         interval_valid: parseInt(document.getElementById('cfgValid').value) || 120,
@@ -1593,21 +1793,67 @@ function importAccounts(input) {
     const btn = document.querySelector('[onclick*="importFile"]');
     const orig = btn.textContent;
     btn.disabled = true;
-    btn.textContent = '导入中...';
+    btn.textContent = t('importRunning');
     fetch('/api/import', {method:'POST', body: formData}).then(r=>r.json()).then(data => {
         if (data.status === 'ok') {
-            btn.textContent = '✅ 导入' + data.imported + '个';
+            btn.textContent = t('importOk') + data.imported;
             setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 3000);
             updateUI();
         } else {
-            btn.textContent = '❌ ' + (data.message || '失败');
+            btn.textContent = t('importFail') + ' ' + (data.message || '');
             setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 3000);
         }
     }).catch(() => {
-        btn.textContent = '❌ 网络错误';
+        btn.textContent = t('importNetworkError');
         setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 3000);
     });
     input.value = '';
+}
+function changeAuthDir() {
+    const current = document.getElementById('authDirPath').textContent;
+    const newDir = prompt(t('changeDirPrompt'), current);
+    if (!newDir || newDir === current) return;
+    fetch('/api/auth-dir', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({auth_dir:newDir})}).then(r=>r.json()).then(data => {
+        if (data.status === 'ok') {
+            document.getElementById('authDirPath').textContent = data.auth_dir;
+            log_info_msg(t('dirChanged') + ': ' + data.auth_dir);
+        } else {
+            alert(t('dirChangeFail') + ': ' + (data.message || ''));
+        }
+    }).catch(() => {
+        alert(t('dirChangeFail'));
+    });
+}
+function log_info_msg(msg) {
+    const container = document.getElementById('logContainer');
+    const div = document.createElement('div');
+    div.className = 'log-line log-info';
+    const now = new Date();
+    div.innerHTML = '<span class="log-time">' + now.toTimeString().substring(0,8) + '</span>' + escapeHtml(msg);
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+function showDirHelp() {
+    document.getElementById('dirHelpTitle').textContent = t('dirHelpTitle');
+    document.getElementById('dirHelpContent').innerHTML =
+        '<div class="step">' + t('dirHelpStep1') + '</div>' +
+        '<div style="margin-left:12px;margin-bottom:8px">' + t('dirHelpStep1Text') + '</div>' +
+        '<div class="step">' + t('dirHelpStep2') + '</div>' +
+        '<div style="margin-left:12px;margin-bottom:8px">' + t('dirHelpStep2Text') + '</div>' +
+        '<div class="step">' + t('dirHelpStep3') + '</div>' +
+        '<div style="margin-left:12px;margin-bottom:8px">' + t('dirHelpStep3Text') + '</div>' +
+        '<div class="step">' + t('dirHelpStep4') + '</div>' +
+        '<div style="margin-left:12px;margin-bottom:8px">' + t('dirHelpStep4Text') + '</div>' +
+        '<div class="step warn">' + t('dirHelpWarn') + '</div>' +
+        '<div style="margin-left:12px">' + t('dirHelpWarnText') + '</div>';
+    var helpDirEl = document.getElementById('helpCurrentDir');
+    if (helpDirEl) {
+        helpDirEl.textContent = document.getElementById('authDirPath').textContent;
+    }
+    document.getElementById('dirHelpModal').classList.add('show');
+}
+function closeDirHelp() {
+    document.getElementById('dirHelpModal').classList.remove('show');
 }
 setInterval(updateUI, 2000);
 updateUI();
@@ -1645,10 +1891,11 @@ def main():
     app = create_app(config_path=args.config, auth_dir_override=args.auth_dir)
     cfg = app.config["CLI_CONFIG"]
     auth_dir = app.config["AUTH_DIR"]
-    port = cfg.get("port", 8317)
     print(f"CLIProxyAPI Codex Account Monitor starting on http://{args.host}:{args.port}")
     print(f"Auth dir: {auth_dir}")
-    print(f"Management API: http://127.0.0.1:{port}{MANAGEMENT_BASE_PATH}")
+    auth_dir_source = "--auth-dir" if args.auth_dir else ("AUTH_DIR env" if os.environ.get("AUTH_DIR") else ("config" if cfg.get("auth_dir") else "default"))
+    print(f"Auth dir source: {auth_dir_source}")
+    print(f"Management API: {_get_management_base_url(cfg)}")
     mgmt_key = _get_management_key(args.config)
     if mgmt_key:
         print(f"Management key: {'*' * 8}{mgmt_key[-4:]}")
