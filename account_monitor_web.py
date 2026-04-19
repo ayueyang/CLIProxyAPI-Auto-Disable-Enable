@@ -1386,7 +1386,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     .layout-switch { display: none; }
     .controls-row { flex-wrap: wrap; }
 }
-.accounts-table { border-collapse: collapse; font-size: 12px; table-layout: fixed; width: 100%; }
+.accounts-table { border-collapse: collapse; font-size: 12px; table-layout: fixed; }
 .accounts-table th { text-align: left; padding: 6px 8px; color: #a6adc8; border-bottom: 1px solid #45475a; font-weight: 600; position: sticky; top: 0; background: #0f0f1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; user-select: none; max-width: 0; }
 .accounts-table th .resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 4px; cursor: col-resize; background: transparent; z-index: 1; }
 .accounts-table th .resize-handle:hover, .accounts-table th .resize-handle.active { background: #89b4fa; }
@@ -1575,6 +1575,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 let lastLogCount = 0;
 let currentLang = localStorage.getItem('lang') || 'zh';
 let _logVisible = true;
+let _layoutMode = localStorage.getItem('layoutMode') || 'single';
 
 const i18n = {
     zh: {
@@ -1780,10 +1781,13 @@ setLayout(_layoutMode);
     table.insertBefore(colgroup, table.firstChild);
     function updateTableWidth() {
         const total = colWidths.reduce((a, b) => a + b, 0);
-        table.style.width = total + 'px';
+        const containerW = table.parentElement.clientWidth - 2;
+        const w = Math.max(total, containerW);
+        table.style.width = w + 'px';
         table.style.minWidth = total + 'px';
     }
     updateTableWidth();
+    window.addEventListener('resize', updateTableWidth);
     const ths = table.querySelectorAll('thead th');
     ths.forEach((th, i) => {
         const handle = document.createElement('div');
@@ -1955,7 +1959,6 @@ function confirmCleanup() {
     fetch('/api/toggle', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key:'auto_cleanup'})}).then(()=>updateUI());
 }
 var _autostartEnabled = false;
-var _layoutMode = localStorage.getItem('layoutMode') || 'single';
 function setLayout(mode) {
     _layoutMode = mode;
     localStorage.setItem('layoutMode', mode);
