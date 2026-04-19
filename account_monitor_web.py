@@ -1481,7 +1481,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         <div class="toggle" id="toggleAutostart" onclick="toggleAutostart()"></div>
     </div>
     <div class="toggle-group">
-        <span id="showLogLabel">显示日志</span>
+        <span id="showLogLabel">折叠日志</span>
         <div class="toggle active" id="toggleLog" onclick="toggleLogPanel()"></div>
     </div>
 </div>
@@ -1569,7 +1569,7 @@ const i18n = {
         autostartOn: '开机自启: 开', autostartOff: '开机自启: 关', autostartEnable: '开启开机自启', autostartDisable: '关闭开机自启',
         autostartWarn: '将添加启动项到注册表，开机后自动运行 Monitor 服务。确定开启吗？',
         autostartOnlyWindows: '开机自启仅支持 Windows',
-        showLog: '显示日志', hideLog: '隐藏日志', logTitle: '📝 运行日志', logCollapse: '▼ 点击折叠', logExpand: '▶ 点击展开',
+        showLog: '展开日志', hideLog: '折叠日志', logTitle: '📝 运行日志', logCollapse: '▼ 点击折叠', logExpand: '▶ 点击展开',
         valid: '✅ 有效', noQuota: '⚠️ 无额度', invalid: '❌ 失效', unknown: '❓ 未知', skip: '⏭️ 跳过', total: '📊 总计',
         cfgValid: '✅有效', cfgNoQuota: '⚠️无额度', cfgInvalid: '❌失效', cfgUnknown: '❓未知',
         cfgRetryUnknown: '未知重试', cfgRetryInvalid: '失效重试',
@@ -1630,7 +1630,7 @@ const i18n = {
         autostartOn: 'Autostart: On', autostartOff: 'Autostart: Off', autostartEnable: 'Enable Autostart', autostartDisable: 'Disable Autostart',
         autostartWarn: 'This will add a startup entry to the registry to auto-run Monitor on boot. Enable?',
         autostartOnlyWindows: 'Autostart only supports Windows',
-        showLog: 'Show Log', hideLog: 'Hide Log', logTitle: '📝 Logs', logCollapse: '▼ Click to collapse', logExpand: '▶ Click to expand',
+        showLog: 'Expand Log', hideLog: 'Collapse Log', logTitle: '📝 Logs', logCollapse: '▼ Click to collapse', logExpand: '▶ Click to expand',
         valid: '✅ Valid', noQuota: '⚠️ No Quota', invalid: '❌ Invalid', unknown: '❓ Unknown', skip: '⏭️ Skip', total: '📊 Total',
         cfgValid: '✅Valid', cfgNoQuota: '⚠️No Quota', cfgInvalid: '❌Invalid', cfgUnknown: '❓Unknown',
         cfgRetryUnknown: 'Retry Unknown', cfgRetryInvalid: 'Retry Invalid',
