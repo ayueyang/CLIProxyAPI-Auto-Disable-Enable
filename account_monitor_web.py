@@ -1375,7 +1375,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .panel { padding: 12px; overflow: hidden; }
 .panel-title { font-size: 14px; font-weight: 700; color: #f5c2e7; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #45475a; }
 .accounts-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
-.accounts-table th { text-align: left; padding: 6px 6px; color: #a6adc8; border-bottom: 1px solid #45475a; font-weight: 600; position: sticky; top: 0; background: #0f0f1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.accounts-table th { text-align: left; padding: 6px 6px; color: #a6adc8; border-bottom: 1px solid #45475a; font-weight: 600; position: sticky; top: 0; background: #0f0f1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; user-select: none; }
+.accounts-table th .resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 4px; cursor: col-resize; background: transparent; }
+.accounts-table th .resize-handle:hover, .accounts-table th .resize-handle.active { background: #89b4fa; }
 .accounts-table td { padding: 4px 6px; border-bottom: 1px solid #1e1e2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .accounts-table tr:hover { background: #1e1e2e; }
 .badge { padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
@@ -1507,7 +1509,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         <div class="panel-title">📋 账号列表</div>
         <div class="accounts-scroll">
             <table class="accounts-table">
-                <thead><tr><th>文件名</th><th>邮箱</th><th>状态</th><th>原因</th><th>重置时间</th><th>上次检查</th></tr></thead>
+                <thead><tr><th data-col="0" style="width:25%">文件名</th><th data-col="1" style="width:20%">邮箱</th><th data-col="2" style="width:10%">状态</th><th data-col="3" style="width:20%">原因</th><th data-col="4" style="width:12%">重置时间</th><th data-col="5" style="width:13%">上次检查</th></tr></thead>
                 <tbody id="accountsBody"></tbody>
             </table>
         </div>
@@ -1725,6 +1727,42 @@ function applyLang() {
 }
 
 setLang(currentLang);
+
+(function initResize() {
+    const table = document.querySelector('.accounts-table');
+    if (!table) return;
+    const ths = table.querySelectorAll('thead th');
+    ths.forEach(th => {
+        const handle = document.createElement('div');
+        handle.className = 'resize-handle';
+        th.appendChild(handle);
+        let startX = 0, startW = 0, currentTh = null;
+        handle.addEventListener('mousedown', e => {
+            e.preventDefault();
+            currentTh = th;
+            startX = e.clientX;
+            startW = th.offsetWidth;
+            handle.classList.add('active');
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+        function onMove(e) {
+            if (!currentTh) return;
+            const diff = e.clientX - startX;
+            const newW = Math.max(40, startW + diff);
+            currentTh.style.width = newW + 'px';
+            currentTh.style.minWidth = newW + 'px';
+        }
+        function onUp() {
+            if (currentTh) {
+                currentTh = null;
+                handle.classList.remove('active');
+            }
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        }
+    });
+})();
 
 function formatRelativeTime(timeStr) {
     if (!timeStr) return '';
