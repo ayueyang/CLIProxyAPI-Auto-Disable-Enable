@@ -1374,11 +1374,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 @media (max-width: 900px) { .main-content { grid-template-columns: 1fr; } }
 .panel { padding: 12px; overflow: hidden; }
 .panel-title { font-size: 14px; font-weight: 700; color: #f5c2e7; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #45475a; }
-.accounts-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; min-width: 600px; }
-.accounts-table th { text-align: left; padding: 6px 6px; color: #a6adc8; border-bottom: 1px solid #45475a; font-weight: 600; position: sticky; top: 0; background: #0f0f1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; user-select: none; }
+.accounts-table { border-collapse: collapse; font-size: 12px; table-layout: auto; }
+.accounts-table th { text-align: left; padding: 6px 8px; color: #a6adc8; border-bottom: 1px solid #45475a; font-weight: 600; position: sticky; top: 0; background: #0f0f1a; white-space: nowrap; position: relative; user-select: none; }
 .accounts-table th .resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 4px; cursor: col-resize; background: transparent; }
 .accounts-table th .resize-handle:hover, .accounts-table th .resize-handle.active { background: #89b4fa; }
-.accounts-table td { padding: 4px 6px; border-bottom: 1px solid #1e1e2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0; }
+.accounts-table td { padding: 4px 8px; border-bottom: 1px solid #1e1e2e; white-space: nowrap; }
 .accounts-table tr:hover { background: #1e1e2e; }
 .badge { padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .badge-valid { background: #22c55e22; color: #22c55e; }
@@ -1749,23 +1749,24 @@ setLang(currentLang);
         let startX = 0, startW = 0;
         handle.addEventListener('mousedown', e => {
             e.preventDefault();
+            e.stopPropagation();
             startX = e.clientX;
             startW = colWidths[i];
             handle.classList.add('active');
+            const onMove = ev => {
+                const diff = ev.clientX - startX;
+                const newW = Math.max(40, startW + diff);
+                colWidths[i] = newW;
+                cols[i].style.width = newW + 'px';
+            };
+            const onUp = () => {
+                handle.classList.remove('active');
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            };
             document.addEventListener('mousemove', onMove);
             document.addEventListener('mouseup', onUp);
         });
-        function onMove(e) {
-            const diff = e.clientX - startX;
-            const newW = Math.max(40, startW + diff);
-            colWidths[i] = newW;
-            cols[i].style.width = newW + 'px';
-        }
-        function onUp() {
-            handle.classList.remove('active');
-            document.removeEventListener('mousemove', onMove);
-            document.removeEventListener('mouseup', onUp);
-        }
     });
 })();
 
