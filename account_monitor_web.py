@@ -1375,10 +1375,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .panel { padding: 12px; overflow: hidden; }
 .panel-title { font-size: 14px; font-weight: 700; color: #f5c2e7; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #45475a; }
 .accounts-table { border-collapse: collapse; font-size: 12px; table-layout: fixed; width: 100%; }
-.accounts-table th { text-align: left; padding: 6px 8px; color: #a6adc8; border-bottom: 1px solid #45475a; font-weight: 600; position: sticky; top: 0; background: #0f0f1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; user-select: none; }
+.accounts-table th { text-align: left; padding: 6px 8px; color: #a6adc8; border-bottom: 1px solid #45475a; font-weight: 600; position: sticky; top: 0; background: #0f0f1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; user-select: none; max-width: 0; }
 .accounts-table th .resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 4px; cursor: col-resize; background: transparent; z-index: 1; }
 .accounts-table th .resize-handle:hover, .accounts-table th .resize-handle.active { background: #89b4fa; }
-.accounts-table td { padding: 4px 8px; border-bottom: 1px solid #1e1e2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.accounts-table td { padding: 4px 8px; border-bottom: 1px solid #1e1e2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0; }
 .accounts-table tr:hover { background: #1e1e2e; }
 .badge { padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .badge-valid { background: #22c55e22; color: #22c55e; }
@@ -1842,7 +1842,7 @@ function updateUI() {
             const relativeTime = a.last_check ? formatRelativeTime(a.last_check) : '';
             const resetTime = a.reset_at ? a.reset_at.replace('T',' ').substring(0,16) : '-';
             const resetDisplay = a.reset_at ? (() => { const d = new Date(a.reset_at); const now = new Date(); const diffMs = d - now; const diffDays = Math.ceil(diffMs / 86400000); const diffHours = Math.ceil(diffMs / 3600000); const dateStr = (d.getMonth()+1) + '/' + d.getDate(); if (diffDays > 1) return dateStr + '(' + diffDays + t('daysLater') + ')'; if (diffDays === 1) return dateStr + '(1' + t('daysLater') + ')'; if (diffHours > 0) return diffHours + t('hoursLater'); if (diffHours === 0) return t('aboutToReset'); return dateStr + '(' + Math.abs(diffDays) + t('daysAgo') + ')'; })() : '-';
-            rows += '<tr><td title="' + a.filename + '">' + (a.filename.length>25 ? a.filename.substring(0,25)+'...' : a.filename) + '</td><td>' + (a.email||'-') + '</td><td>' + badge + '</td><td title="' + a.reason + '">' + (a.reason.length>20 ? a.reason.substring(0,20)+'...' : a.reason) + '</td><td class="reset-time" title="' + resetTime + '">' + resetDisplay + '</td><td class="last-check-time">' + checkTime + '<span class="relative-time">' + relativeTime + '</span></td></tr>';
+            rows += '<tr><td title="' + a.filename + '">' + a.filename + '</td><td title="' + (a.email||'-') + '">' + (a.email||'-') + '</td><td>' + badge + '</td><td title="' + a.reason + '">' + a.reason + '</td><td class="reset-time" title="' + resetTime + '">' + resetDisplay + '</td><td class="last-check-time">' + checkTime + '<span class="relative-time">' + relativeTime + '</span></td></tr>';
         }
         tbody.innerHTML = rows;
         document.getElementById('countValid').textContent = valid;
