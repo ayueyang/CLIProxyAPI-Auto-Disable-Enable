@@ -1918,7 +1918,7 @@ function showRestore() {
         let html = '';
         for (const b of data.backups) {
             const label = b.name.replace('backup_','').replace('.zip','').replace(/_/g,' ').replace(/(\\d{4}) (\\d{2})(\\d{2}) (\\d{2})(\\d{2})(\\d{2})/, '$1-$2-$3 $4:$5:$6');
-            html += '<div class="backup-item"><span class="name">' + label + '</span><span class="count">' + b.files + ' files ' + (b.size_kb ? b.size_kb + 'KB' : '') + '</span><button class="btn-restore" onclick="doRestore(\'' + b.name + '\')">' + t('btnRestoreFile') + '</button><button class="btn-delete-backup" onclick="doDeleteBackup(\'' + b.name + '\')">' + t('btnDeleteBackup') + '</button></div>';
+            html += '<div class="backup-item"><span class="name">' + label + '</span><span class="count">' + b.files + ' files ' + (b.size_kb ? b.size_kb + 'KB' : '') + '</span><button class="btn-restore" onclick="doRestore(&apos;' + b.name + '&apos;)">' + t('btnRestoreFile') + '</button><button class="btn-delete-backup" onclick="doDeleteBackup(&apos;' + b.name + '&apos;)">' + t('btnDeleteBackup') + '</button></div>';
         }
         list.innerHTML = html;
     });
