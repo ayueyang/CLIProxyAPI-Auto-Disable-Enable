@@ -1370,10 +1370,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .config-group input { width: 52px; padding: 3px 5px; border-radius: 4px; border: 1px solid #45475a; background: #313244; color: #cdd6f4; font-size: 12px; text-align: center; }
 .config-group .unit { color: #6b7280; font-size: 11px; }
 .btn-sm { padding: 3px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; background: #45475a; color: #cdd6f4; white-space: nowrap; }
-.main-content { display: grid; grid-template-columns: 1fr 1fr; gap: 0; min-height: calc(100vh - 340px); }
-@media (max-width: 900px) { .main-content { grid-template-columns: 1fr; } }
+.main-content { padding: 0 12px; }
 .panel { padding: 12px; overflow: hidden; }
 .panel-title { font-size: 14px; font-weight: 700; color: #f5c2e7; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #45475a; }
+.log-panel { background: #1e1e2e; padding: 12px; border-top: 1px solid #313244; }
+.log-panel.collapsed .log-container { display: none; }
 .accounts-table { border-collapse: collapse; font-size: 12px; table-layout: fixed; width: 100%; }
 .accounts-table th { text-align: left; padding: 6px 8px; color: #a6adc8; border-bottom: 1px solid #45475a; font-weight: 600; position: sticky; top: 0; background: #0f0f1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; user-select: none; max-width: 0; }
 .accounts-table th .resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 4px; cursor: col-resize; background: transparent; z-index: 1; }
@@ -1386,13 +1387,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .badge-invalid { background: #ef444422; color: #ef4444; }
 .badge-unknown { background: #6b728022; color: #6b7280; }
 .badge-skip { background: #3b82f622; color: #3b82f6; }
-.log-container { height: calc(100vh - 380px); overflow-y: auto; background: #11111b; border-radius: 6px; padding: 8px; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; line-height: 1.6; }
+.log-container { height: 200px; overflow-y: auto; background: #11111b; border-radius: 6px; padding: 8px; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; line-height: 1.6; }
 .log-line { white-space: pre-wrap; word-break: break-all; }
 .log-info { color: #3b82f6; }
 .log-warn { color: #eab308; }
 .log-error { color: #ef4444; }
 .log-time { color: #6b7280; margin-right: 6px; }
-.accounts-scroll { max-height: calc(100vh - 380px); overflow: auto; }
+.accounts-scroll { max-height: calc(100vh - 400px); overflow: auto; }
 .last-check-time { position: relative; }
 .relative-time { font-size: 10px; color: #6b7280; display: block; margin-top: 2px; }
 .countdown { font-size: 10px; color: #6b7280; margin-top: 2px; }
@@ -1479,6 +1480,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         <span id="autostartLabel">开机自启</span>
         <div class="toggle" id="toggleAutostart" onclick="toggleAutostart()"></div>
     </div>
+    <div class="toggle-group">
+        <span id="showLogLabel">显示日志</span>
+        <div class="toggle active" id="toggleLog" onclick="toggleLogPanel()"></div>
+    </div>
 </div>
 <div class="auth-dir-bar">
     <span class="auth-dir-label" id="authDirLabel">📂 账号目录：</span>
@@ -1514,10 +1519,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
             </table>
         </div>
     </div>
-    <div class="panel">
-        <div class="panel-title">📝 运行日志</div>
-        <div class="log-container" id="logContainer"></div>
-    </div>
+</div>
+<div class="log-panel" id="logPanel">
+    <div class="panel-title" style="cursor:pointer" onclick="toggleLogPanel()">📝 运行日志 <span id="logToggleHint" style="font-size:11px;color:#6b7280;float:right;cursor:pointer">▼ 点击折叠</span></div>
+    <div class="log-container" id="logContainer"></div>
 </div>
 <div class="modal-overlay" id="restoreModal">
     <div class="modal">
@@ -1549,6 +1554,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 <script>
 let lastLogCount = 0;
 let currentLang = localStorage.getItem('lang') || 'zh';
+let _logVisible = true;
 
 const i18n = {
     zh: {
@@ -1563,6 +1569,7 @@ const i18n = {
         autostartOn: '开机自启: 开', autostartOff: '开机自启: 关', autostartEnable: '开启开机自启', autostartDisable: '关闭开机自启',
         autostartWarn: '将添加启动项到注册表，开机后自动运行 Monitor 服务。确定开启吗？',
         autostartOnlyWindows: '开机自启仅支持 Windows',
+        showLog: '显示日志', hideLog: '隐藏日志', logTitle: '📝 运行日志', logCollapse: '▼ 点击折叠', logExpand: '▶ 点击展开',
         valid: '✅ 有效', noQuota: '⚠️ 无额度', invalid: '❌ 失效', unknown: '❓ 未知', skip: '⏭️ 跳过', total: '📊 总计',
         cfgValid: '✅有效', cfgNoQuota: '⚠️无额度', cfgInvalid: '❌失效', cfgUnknown: '❓未知',
         cfgRetryUnknown: '未知重试', cfgRetryInvalid: '失效重试',
@@ -1623,6 +1630,7 @@ const i18n = {
         autostartOn: 'Autostart: On', autostartOff: 'Autostart: Off', autostartEnable: 'Enable Autostart', autostartDisable: 'Disable Autostart',
         autostartWarn: 'This will add a startup entry to the registry to auto-run Monitor on boot. Enable?',
         autostartOnlyWindows: 'Autostart only supports Windows',
+        showLog: 'Show Log', hideLog: 'Hide Log', logTitle: '📝 Logs', logCollapse: '▼ Click to collapse', logExpand: '▶ Click to expand',
         valid: '✅ Valid', noQuota: '⚠️ No Quota', invalid: '❌ Invalid', unknown: '❓ Unknown', skip: '⏭️ Skip', total: '📊 Total',
         cfgValid: '✅Valid', cfgNoQuota: '⚠️No Quota', cfgInvalid: '❌Invalid', cfgUnknown: '❓Unknown',
         cfgRetryUnknown: 'Retry Unknown', cfgRetryInvalid: 'Retry Invalid',
@@ -1716,7 +1724,9 @@ function applyLang() {
     document.querySelectorAll('.unit').forEach((el, i) => el.textContent = i < 4 ? t('unitSec') : (i === 6 ? t('cfgNewFileCheckUnit') : t('unitTimes')));
     document.querySelector('.config-panel .btn-sm').textContent = t('btnSave');
     document.querySelectorAll('.panel-title')[0].textContent = t('accountList');
-    document.querySelectorAll('.panel-title')[1].textContent = t('runLog');
+    const logTitle = document.querySelector('.log-panel .panel-title');
+    if (logTitle) { logTitle.innerHTML = t('logTitle') + ' <span id="logToggleHint" style="font-size:11px;color:#6b7280;float:right;cursor:pointer">' + (_logVisible ? t('logCollapse') : t('logExpand')) + '</span>'; }
+    document.getElementById('showLogLabel').textContent = _logVisible ? t('hideLog') : t('showLog');
     const ths = document.querySelectorAll('.accounts-table thead th');
     if (ths.length >= 6) { ths[0].textContent = t('thFilename'); ths[1].textContent = t('thEmail'); ths[2].textContent = t('thStatus'); ths[3].textContent = t('thReason'); ths[4].textContent = t('thResetTime'); ths[5].textContent = t('thLastCheck'); }
     document.querySelector('.modal h2').textContent = t('backupTitle');
@@ -1919,6 +1929,24 @@ function confirmCleanup() {
     fetch('/api/toggle', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key:'auto_cleanup'})}).then(()=>updateUI());
 }
 var _autostartEnabled = false;
+function toggleLogPanel() {
+    _logVisible = !_logVisible;
+    const panel = document.getElementById('logPanel');
+    const toggle = document.getElementById('toggleLog');
+    const hint = document.getElementById('logToggleHint');
+    const label = document.getElementById('showLogLabel');
+    if (_logVisible) {
+        panel.classList.remove('collapsed');
+        toggle.classList.add('active');
+        if (hint) hint.textContent = t('logCollapse');
+        if (label) label.textContent = t('hideLog');
+    } else {
+        panel.classList.add('collapsed');
+        toggle.classList.remove('active');
+        if (hint) hint.textContent = t('logExpand');
+        if (label) label.textContent = t('showLog');
+    }
+}
 function toggleAutostart() {
     if (!_autostartEnabled) {
         if (!confirm(t('autostartWarn'))) return;
