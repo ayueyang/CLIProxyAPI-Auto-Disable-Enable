@@ -1386,7 +1386,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     .layout-switch { display: none; }
     .controls-row { flex-wrap: wrap; }
 }
-.accounts-table { border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+.accounts-table { border-collapse: collapse; font-size: 12px; table-layout: fixed; width: 100%; }
 .accounts-table th { text-align: left; padding: 6px 8px; color: #a6adc8; border-bottom: 1px solid #45475a; font-weight: 600; position: sticky; top: 0; background: #0f0f1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; user-select: none; max-width: 0; }
 .accounts-table th .resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 4px; cursor: col-resize; background: transparent; z-index: 1; }
 .accounts-table th .resize-handle:hover, .accounts-table th .resize-handle.active { background: #89b4fa; }
@@ -1773,28 +1773,17 @@ setLayout(_layoutMode);
 (function initResize() {
     const table = document.querySelector('.accounts-table');
     if (!table) return;
-    const defaultWidths = [160, 70, 120, 90, 80];
-    const colWidths = [...defaultWidths];
+    const defaultPercents = [35, 10, 20, 15, 20];
+    const colPercents = [...defaultPercents];
     const colgroup = document.createElement('colgroup');
     const cols = [];
-    colWidths.forEach(w => {
+    colPercents.forEach(w => {
         const col = document.createElement('col');
-        col.style.width = w + 'px';
+        col.style.width = w + '%';
         colgroup.appendChild(col);
         cols.push(col);
     });
     table.insertBefore(colgroup, table.firstChild);
-    function updateTableWidth() {
-        const total = colWidths.reduce((a, b) => a + b, 0);
-        const scrollEl = table.closest('.accounts-scroll');
-        const containerW = scrollEl ? scrollEl.clientWidth - 2 : table.parentElement.clientWidth - 2;
-        const isDouble = document.getElementById('mainContent') && document.getElementById('mainContent').classList.contains('layout-double');
-        const w = isDouble ? total : Math.max(total, containerW);
-        table.style.width = w + 'px';
-        table.style.minWidth = total + 'px';
-    }
-    updateTableWidth();
-    window.addEventListener('resize', updateTableWidth);
     const ths = table.querySelectorAll('thead th');
     ths.forEach((th, i) => {
         const handle = document.createElement('div');
@@ -1805,14 +1794,15 @@ setLayout(_layoutMode);
             e.preventDefault();
             e.stopPropagation();
             startX = e.clientX;
-            startW = colWidths[i];
+            startW = colPercents[i];
             handle.classList.add('active');
             const onMove = ev => {
-                const diff = ev.clientX - startX;
-                const newW = Math.max(40, startW + diff);
-                colWidths[i] = newW;
-                cols[i].style.width = newW + 'px';
-                updateTableWidth();
+                const tableW = table.clientWidth;
+                const diffPx = ev.clientX - startX;
+                const diffPct = (diffPx / tableW) * 100;
+                const newPct = Math.max(5, startW + diffPct);
+                colPercents[i] = newPct;
+                cols[i].style.width = newPct + '%';
             };
             const onUp = () => {
                 handle.classList.remove('active');
