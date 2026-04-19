@@ -1374,11 +1374,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 @media (max-width: 900px) { .main-content { grid-template-columns: 1fr; } }
 .panel { padding: 12px; overflow: hidden; }
 .panel-title { font-size: 14px; font-weight: 700; color: #f5c2e7; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #45475a; }
-.accounts-table { border-collapse: collapse; font-size: 12px; table-layout: auto; }
-.accounts-table th { text-align: left; padding: 6px 8px; color: #a6adc8; border-bottom: 1px solid #45475a; font-weight: 600; position: sticky; top: 0; background: #0f0f1a; white-space: nowrap; position: relative; user-select: none; }
-.accounts-table th .resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 4px; cursor: col-resize; background: transparent; }
+.accounts-table { border-collapse: collapse; font-size: 12px; table-layout: fixed; width: 100%; }
+.accounts-table th { text-align: left; padding: 6px 8px; color: #a6adc8; border-bottom: 1px solid #45475a; font-weight: 600; position: sticky; top: 0; background: #0f0f1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; user-select: none; }
+.accounts-table th .resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 4px; cursor: col-resize; background: transparent; z-index: 1; }
 .accounts-table th .resize-handle:hover, .accounts-table th .resize-handle.active { background: #89b4fa; }
-.accounts-table td { padding: 4px 8px; border-bottom: 1px solid #1e1e2e; white-space: nowrap; }
+.accounts-table td { padding: 4px 8px; border-bottom: 1px solid #1e1e2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .accounts-table tr:hover { background: #1e1e2e; }
 .badge { padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .badge-valid { background: #22c55e22; color: #22c55e; }
@@ -1731,7 +1731,8 @@ setLang(currentLang);
 (function initResize() {
     const table = document.querySelector('.accounts-table');
     if (!table) return;
-    const colWidths = [180, 150, 70, 150, 90, 100];
+    const defaultWidths = [180, 150, 70, 150, 90, 100];
+    const colWidths = [...defaultWidths];
     const colgroup = document.createElement('colgroup');
     const cols = [];
     colWidths.forEach(w => {
@@ -1741,6 +1742,12 @@ setLang(currentLang);
         cols.push(col);
     });
     table.insertBefore(colgroup, table.firstChild);
+    function updateTableWidth() {
+        const total = colWidths.reduce((a, b) => a + b, 0);
+        table.style.width = total + 'px';
+        table.style.minWidth = total + 'px';
+    }
+    updateTableWidth();
     const ths = table.querySelectorAll('thead th');
     ths.forEach((th, i) => {
         const handle = document.createElement('div');
@@ -1758,6 +1765,7 @@ setLang(currentLang);
                 const newW = Math.max(40, startW + diff);
                 colWidths[i] = newW;
                 cols[i].style.width = newW + 'px';
+                updateTableWidth();
             };
             const onUp = () => {
                 handle.classList.remove('active');
