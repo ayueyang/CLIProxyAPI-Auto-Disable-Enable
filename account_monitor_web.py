@@ -1390,7 +1390,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .accounts-table th { text-align: left; padding: 6px 8px; color: #a6adc8; border-bottom: 1px solid #45475a; font-weight: 600; position: sticky; top: 0; background: #0f0f1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; user-select: none; max-width: 0; }
 .accounts-table th .resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 4px; cursor: col-resize; background: transparent; z-index: 1; }
 .accounts-table th .resize-handle:hover, .accounts-table th .resize-handle.active { background: #89b4fa; }
-.accounts-table td { padding: 4px 8px; border-bottom: 1px solid #1e1e2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0; }
+.accounts-table td { padding: 4px 8px; border-bottom: 1px solid #1e1e2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0; user-select: none; }
 .accounts-table tr:hover { background: #1e1e2e; }
 .badge { padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .badge-valid { background: #22c55e22; color: #22c55e; }
@@ -1405,8 +1405,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .log-error { color: #ef4444; }
 .log-time { color: #6b7280; margin-right: 6px; }
 .accounts-scroll { max-height: calc(100vh - 400px); overflow: auto; }
-.info-cell .cell-email { display: block; color: #cdd6f4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.info-cell .cell-filename { display: block; color: #6b7280; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.info-cell .cell-email { display: block; color: #cdd6f4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: text; }
+.info-cell .cell-filename { display: block; color: #6b7280; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; user-select: text; }
 .last-check-time { position: relative; }
 .relative-time { font-size: 10px; color: #6b7280; display: block; margin-top: 2px; }
 .countdown { font-size: 10px; color: #6b7280; margin-top: 2px; }
